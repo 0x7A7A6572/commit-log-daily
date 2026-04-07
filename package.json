@@ -1,0 +1,23 @@
+{
+  "name": "commit-log-daily",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "bin": {
+    "commit-log-daily": "bin/commit-log-daily.js",
+    "cld": "bin/commit-log-daily.js",
+    "clogd": "bin/commit-log-daily.js"
+  },
+  "main": "bin/commit-log-daily.js",
+  "scripts": {
+    "start": "node bin/commit-log-daily.js",
+    "test": "node bin/commit-log-daily.js --help"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "inquirer": "^12.6.0"
+  },
+  "packageManager": "pnpm@10.30.3"
+}
