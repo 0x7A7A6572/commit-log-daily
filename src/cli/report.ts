@@ -1,22 +1,22 @@
 import path from "node:path";
 import process from "node:process";
 
-import { loadConfig, setGitAuthorFilter, updateReportConfig, upsertProject, validateRepoPath } from "../config.js";
-import { detectAuthorPattern, getRangeByPreset, parseDateInput } from "../git.js";
+import { loadConfig, setGitAuthorFilter, updateReportConfig, upsertProject, validateRepoPath, type AppConfig, type Project } from "../config.js";
+import { detectAuthorPattern, getRangeByPreset, parseDateInput, type DateRange, type RangePreset } from "../git.js";
 import { isAiConfigured, isAiStreamEnabled } from "../ai.js";
 import { formatDateYmd, formatRangeLabel, resolveOutputPath, sanitizeFileName } from "../utils/cli.js";
 import { buildReportContent, collectCommits } from "../report/service.js";
 import { writeReportToFile } from "../report/output.js";
 import { setupAiOnce } from "./ai.js";
 
-async function ensureAtLeastOneProjectInteractive(inquirer) {
+async function ensureAtLeastOneProjectInteractive(inquirer: any): Promise<AppConfig> {
   const config = loadConfig();
   if (config.projects.length) return config;
 
   console.log("当前还没有配置任何项目。先添加一个。");
   const answers = await inquirer.prompt([
-    { type: "input", name: "name", message: "项目名", validate: (v) => (String(v).trim() ? true : "必填") },
-    { type: "input", name: "repoPath", message: "本地仓库路径", validate: (v) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "name", message: "项目名", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "repoPath", message: "本地仓库路径", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
   ]);
   const repoCheck = validateRepoPath(answers.repoPath);
   if (!repoCheck.ok) console.log(`提示：路径校验失败：${repoCheck.reason}（仍会写入配置，但后续扫描可能失败）`);
@@ -24,7 +24,7 @@ async function ensureAtLeastOneProjectInteractive(inquirer) {
   return loadConfig();
 }
 
-async function chooseRangeInteractive(inquirer) {
+async function chooseRangeInteractive(inquirer: any): Promise<{ preset: RangePreset | "custom"; range: DateRange }> {
   const { preset } = await inquirer.prompt([
     {
       type: "list",
@@ -46,12 +46,13 @@ async function chooseRangeInteractive(inquirer) {
   }
 
   const answers = await inquirer.prompt([
-    { type: "input", name: "start", message: "开始日期（YYYY-MM-DD）", validate: (v) => (parseDateInput(v) ? true : "格式不对") },
-    { type: "input", name: "end", message: "结束日期（YYYY-MM-DD，可留空=今天）", validate: (v) => (!String(v).trim() || parseDateInput(v) ? true : "格式不对") },
+    { type: "input", name: "start", message: "开始日期（YYYY-MM-DD）", validate: (v: unknown) => (parseDateInput(v) ? true : "格式不对") },
+    { type: "input", name: "end", message: "结束日期（YYYY-MM-DD，可留空=今天）", validate: (v: unknown) => (!String(v).trim() || parseDateInput(v) ? true : "格式不对") },
   ]);
 
   const start = parseDateInput(answers.start);
   const endInput = parseDateInput(answers.end);
+  if (!start) throw new Error("开始日期无效");
   const end = endInput ?? new Date();
   end.setHours(23, 59, 59, 999);
   start.setHours(0, 0, 0, 0);
@@ -60,8 +61,8 @@ async function chooseRangeInteractive(inquirer) {
   return { preset, range: { start, end } };
 }
 
-function getDefaultTitle(preset, rangeLabel) {
-  const map = {
+function getDefaultTitle(preset: string, rangeLabel: string): string {
+  const map: Record<string, string> = {
     daily: `日报 ${formatDateYmd(new Date())}`,
     weekly: `周报 ${rangeLabel}`,
     monthly: `月报 ${rangeLabel}`,
@@ -71,74 +72,67 @@ function getDefaultTitle(preset, rangeLabel) {
   return map[preset] ?? `摘要 ${rangeLabel}`;
 }
 
-async function chooseOutputInteractive(inquirer, title) {
+async function chooseOutputInteractive(inquirer: any, title: string): Promise<{ outputMode: string; filePath: string }> {
   const config = loadConfig();
   const defaultDir = String(config?.report?.outputDir ?? "").trim();
   const defaultFileName = `${sanitizeFileName(title)}.md`;
 
+  const outputChoices = [
+    { name: "仅终端显示", value: "stdout" },
+    { name: "仅导出文件", value: "file" },
+    { name: "终端 + 文件", value: "both" },
+  ];
+  const defaultMode = String(config?.report?.outputMode ?? "stdout").trim();
+  const defaultIndex = Math.max(0, outputChoices.findIndex((c) => c.value === defaultMode));
+
   const { outputMode } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "outputMode",
-      message: "输出方式",
-      choices: [
-        { name: "仅终端显示", value: "stdout" },
-        { name: "仅导出文件", value: "file" },
-        { name: "终端 + 文件", value: "both" },
-      ],
-    },
+    { type: "list", name: "outputMode", message: "输出方式", choices: outputChoices, default: defaultIndex },
   ]);
 
   if (outputMode === "stdout") return { outputMode, filePath: "" };
 
   const suggestedPath = resolveOutputPath({ outputDir: defaultDir, fileName: defaultFileName });
   const { filePath } = await inquirer.prompt([
-    { type: "input", name: "filePath", message: "导出文件路径", default: suggestedPath, validate: (v) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "filePath", message: "导出文件路径", default: suggestedPath, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
   ]);
 
   const normalized = path.resolve(String(filePath).trim());
   const outDir = path.dirname(normalized);
   if (outDir && outDir !== defaultDir) {
-    const { remember } = await inquirer.prompt([
-      { type: "confirm", name: "remember", message: `记住默认输出目录为：${outDir}？`, default: true },
-    ]);
+    const { remember } = await inquirer.prompt([{ type: "confirm", name: "remember", message: `记住默认输出目录为：${outDir}？`, default: true }]);
     if (remember) updateReportConfig({ outputDir: outDir });
   }
 
   return { outputMode, filePath: normalized };
 }
 
-export async function generateReportInteractive(inquirer) {
+export async function generateReportInteractive(inquirer: any): Promise<void> {
   const config = await ensureAtLeastOneProjectInteractive(inquirer);
   const { selected } = await inquirer.prompt([
     {
       type: "checkbox",
       name: "selected",
-      message: "选择要生成摘要的项目（可多选）",
+      message: "选择要生成摘要的项目[可多选]",
       choices: config.projects.map((p) => ({ name: `${p.name} (${p.path})`, value: p.name })),
-      validate: (v) => (Array.isArray(v) && v.length ? true : "至少选一个"),
+      validate: (v: unknown) => (Array.isArray(v) && v.length ? true : "至少选一个"),
     },
   ]);
 
   const { preset, range } = await chooseRangeInteractive(inquirer);
   const rangeLabel = formatRangeLabel(range);
 
-  const { title } = await inquirer.prompt([
-    { type: "input", name: "title", message: "标题", default: getDefaultTitle(preset, rangeLabel) },
-  ]);
+  const { title } = await inquirer.prompt([{ type: "input", name: "title", message: "标题", default: getDefaultTitle(preset, rangeLabel) }]);
 
-  const selectedProjects = config.projects.filter((p) => selected.includes(p.name));
+  const selectedProjects: Project[] = config.projects.filter((p) => (selected as unknown[]).includes(p.name));
 
   const cfg1 = loadConfig();
   let authorPattern = String(cfg1?.git?.author ?? "").trim();
   const wasAuthorEmpty = !authorPattern;
-  const { onlyMine } = await inquirer.prompt([
-    { type: "confirm", name: "onlyMine", message: "只统计我的提交（按作者过滤）？", default: true },
-  ]);
+  const { onlyMine } = await inquirer.prompt([{ type: "confirm", name: "onlyMine", message: "只统计我的提交（按作者过滤）？", default: true }]);
 
   if (onlyMine) {
     if (!authorPattern) {
-      const candidates = [];
+      const candidates: Array<{ name: string; value: string }> = [];
       for (const p of selectedProjects) {
         const detected = detectAuthorPattern(p.path);
         if (detected) candidates.push({ name: `${p.name}: ${detected}`, value: detected });
@@ -149,7 +143,7 @@ export async function generateReportInteractive(inquirer) {
         ]);
         if (picked === "__manual__") {
           const { author } = await inquirer.prompt([
-            { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v) => (String(v).trim() ? true : "必填") },
+            { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
           ]);
           authorPattern = String(author).trim();
         } else {
@@ -157,15 +151,13 @@ export async function generateReportInteractive(inquirer) {
         }
       } else {
         const { author } = await inquirer.prompt([
-          { type: "input", name: "author", message: "未检测到 user.email/user.name，请输入提交人过滤（邮箱/姓名/正则）", validate: (v) => (String(v).trim() ? true : "必填") },
+          { type: "input", name: "author", message: "未检测到 user.email/user.name，请输入提交人过滤（邮箱/姓名/正则）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
         ]);
         authorPattern = String(author).trim();
       }
 
       if (wasAuthorEmpty && authorPattern) {
-        const { persist } = await inquirer.prompt([
-          { type: "confirm", name: "persist", message: `保存为默认过滤（${authorPattern}）？`, default: true },
-        ]);
+        const { persist } = await inquirer.prompt([{ type: "confirm", name: "persist", message: `保存为默认过滤（${authorPattern}）？`, default: true }]);
         if (persist) setGitAuthorFilter(authorPattern);
       }
     }

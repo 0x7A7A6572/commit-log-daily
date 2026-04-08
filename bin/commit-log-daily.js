@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { run } from "../src/cli/app.js";
+import { run } from "../dist/cli/app.js";
 
 run(process.argv)
   .then((code) => process.exit(code))

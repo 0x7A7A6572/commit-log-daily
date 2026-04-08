@@ -2,14 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { loadConfig, removeProjectByName, upsertProject, validateRepoPath, getConfigFilePath } from "../config.js";
+import { loadConfig, removeProjectByName, upsertProject, validateRepoPath, getConfigFilePath, type Project } from "../config.js";
+import type { ParsedArgs } from "../utils/cli.js";
 
-function buildProjectChoices(projects) {
+function buildProjectChoices(projects: Project[]): Array<{ name: string; value: string }> {
   const list = Array.isArray(projects) ? projects : [];
   return list.map((p) => ({ name: `${p.name} (${p.path})`, value: p.name }));
 }
 
-function isGitRepoDir(dirPath) {
+function isGitRepoDir(dirPath: string): boolean {
   try {
     const gitDir = path.join(dirPath, ".git");
     return fs.existsSync(gitDir);
@@ -18,16 +19,16 @@ function isGitRepoDir(dirPath) {
   }
 }
 
-function scanGitRepos({ rootDir, depth = 1 }) {
-  const root = String(rootDir ?? "").trim();
-  const maxDepth = Number.isFinite(Number(depth)) ? Math.max(0, Math.floor(Number(depth))) : 1;
+function scanGitRepos(input: { rootDir: string; depth?: number }): string[] {
+  const root = String(input.rootDir ?? "").trim();
+  const maxDepth = Number.isFinite(Number(input.depth)) ? Math.max(0, Math.floor(Number(input.depth))) : 1;
   if (!root) return [];
   if (!fs.existsSync(root)) return [];
 
-  const results = [];
+  const results: string[] = [];
   const ignoreNames = new Set(["node_modules", ".git", ".pnpm-store", "dist", "build", "out"]);
 
-  const walk = (dir, remainingDepth) => {
+  const walk = (dir: string, remainingDepth: number) => {
     if (!dir) return;
     if (isGitRepoDir(dir)) {
       results.push(dir);
@@ -35,7 +36,7 @@ function scanGitRepos({ rootDir, depth = 1 }) {
     }
     if (remainingDepth <= 0) return;
 
-    let entries = [];
+    let entries: fs.Dirent[] = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -53,7 +54,7 @@ function scanGitRepos({ rootDir, depth = 1 }) {
   return Array.from(new Set(results)).sort((a, b) => a.localeCompare(b));
 }
 
-function toUniqueProjectName(existingNames, baseName) {
+function toUniqueProjectName(existingNames: Set<string>, baseName: string): string {
   const trimmed = String(baseName ?? "").trim() || "project";
   if (!existingNames.has(trimmed)) return trimmed;
   for (let i = 2; i < 999; i += 1) {
@@ -63,29 +64,34 @@ function toUniqueProjectName(existingNames, baseName) {
   return `${trimmed}-${Date.now()}`;
 }
 
-async function selectProjectInteractive(inquirer, projects, message) {
+async function selectProjectInteractive(inquirer: any, projects: Project[], message: string): Promise<{ name: string }> {
   if (!projects.length) return { name: "" };
   const { name } = await inquirer.prompt([
-    { type: "list", name: "name", message, choices: [...buildProjectChoices(projects), { name: "返回", value: "" }] },
+    { type: "list", name: "name", loop: false, message, choices: [...buildProjectChoices(projects), { name: "返回", value: "" }] },
   ]);
-  return { name };
+  return { name: String(name ?? "") };
 }
 
-async function scanAndImportInteractive(inquirer) {
+async function scanAndImportInteractive(inquirer: any): Promise<void> {
   const config = loadConfig();
   const projects = Array.isArray(config.projects) ? config.projects : [];
   const existingPaths = new Set(projects.map((p) => path.resolve(String(p.path ?? ""))));
   const existingNames = new Set(projects.map((p) => String(p.name ?? "")));
 
-  const defaults = { rootDir: process.cwd(), depth: "1" };
+  const defaults = {
+    rootDir: String(config?.projectsScan?.rootDir ?? "").trim() || process.cwd(),
+    depth: String(
+      Number.isFinite(Number(config?.projectsScan?.depth)) ? Math.max(0, Math.floor(Number(config.projectsScan.depth))) : 1,
+    ),
+  };
   const answers = await inquirer.prompt([
-    { type: "input", name: "rootDir", message: "扫描目录（root）", default: defaults.rootDir, validate: (v) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "rootDir", message: "扫描目录（root）", default: defaults.rootDir, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
     {
       type: "input",
       name: "depth",
       message: "扫描深度（默认 1=只扫一层子目录）",
       default: defaults.depth,
-      validate: (v) => (Number(String(v).trim()) >= 0 ? true : "必须是 >= 0 的数字"),
+      validate: (v: unknown) => (Number(String(v).trim()) >= 0 ? true : "必须是 >= 0 的数字"),
     },
   ]);
 
@@ -107,26 +113,29 @@ async function scanAndImportInteractive(inquirer) {
     {
       type: "checkbox",
       name: "picked",
+      loop: false,
       message: `发现 ${candidates.length} 个 git 仓库，选择要导入的项目`,
       choices: candidates.map((p) => ({ name: `${path.basename(p)} (${p})`, value: p })),
-      validate: (v) => (Array.isArray(v) && v.length ? true : "至少选择一个"),
+      validate: (v: unknown) => (Array.isArray(v) && v.length ? true : "至少选择一个"),
     },
   ]);
 
   let added = 0;
-  for (const repoPath of picked) {
-    const baseName = path.basename(repoPath);
+  for (const repoPath of picked as unknown[]) {
+    const repo = String(repoPath ?? "").trim();
+    if (!repo) continue;
+    const baseName = path.basename(repo);
     const name = toUniqueProjectName(existingNames, baseName);
     existingNames.add(name);
-    existingPaths.add(repoPath);
-    upsertProject({ name, repoPath });
+    existingPaths.add(repo);
+    upsertProject({ name, repoPath: repo });
     added += 1;
   }
 
   console.log(`已导入 ${added} 个项目。`);
 }
 
-async function manageProjectListInteractive(inquirer) {
+async function manageProjectListInteractive(inquirer: any): Promise<void> {
   for (;;) {
     const config = loadConfig();
     const projects = Array.isArray(config.projects) ? config.projects : [];
@@ -171,8 +180,8 @@ async function manageProjectListInteractive(inquirer) {
 
     if (action === "edit") {
       const answers = await inquirer.prompt([
-        { type: "input", name: "name", message: "项目名", default: current.name, validate: (v) => (String(v).trim() ? true : "必填") },
-        { type: "input", name: "repoPath", message: "本地仓库路径", default: current.path, validate: (v) => (String(v).trim() ? true : "必填") },
+        { type: "input", name: "name", message: "项目名", default: current.name, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+        { type: "input", name: "repoPath", message: "本地仓库路径", default: current.path, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
       ]);
 
       const nextName = String(answers.name).trim();
@@ -188,7 +197,7 @@ async function manageProjectListInteractive(inquirer) {
   }
 }
 
-export async function manageProjectsInteractive(inquirer) {
+export async function manageProjectsInteractive(inquirer: any): Promise<void> {
   for (;;) {
     const config = loadConfig();
     const { action } = await inquirer.prompt([
@@ -198,8 +207,8 @@ export async function manageProjectsInteractive(inquirer) {
         message: "项目配置",
         choices: [
           { name: `项目列表（选择编辑/删除）（${config.projects.length}）`, value: "list" },
-          { name: "添加/更新项目", value: "add" },
-          { name: "扫描目录并自动导入 git 项目", value: "scan" },
+          { name: "手动添加指定项目", value: "add" },
+          { name: "扫描目录并导入项目", value: "scan" },
           { name: "返回", value: "back" },
         ],
       },
@@ -214,8 +223,8 @@ export async function manageProjectsInteractive(inquirer) {
 
     if (action === "add") {
       const answers = await inquirer.prompt([
-        { type: "input", name: "name", message: "项目名", validate: (v) => (String(v).trim() ? true : "必填") },
-        { type: "input", name: "repoPath", message: "本地仓库路径", validate: (v) => (String(v).trim() ? true : "必填") },
+        { type: "input", name: "name", message: "项目名", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+        { type: "input", name: "repoPath", message: "本地仓库路径", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
       ]);
       const repoCheck = validateRepoPath(answers.repoPath);
       if (!repoCheck.ok) console.log(`提示：路径校验失败：${repoCheck.reason}（仍会写入配置，但后续扫描可能失败）`);
@@ -231,7 +240,10 @@ export async function manageProjectsInteractive(inquirer) {
   }
 }
 
-export function handleProjectsCommand({ subcmd, flags }) {
+export function handleProjectsCommand(input: Pick<ParsedArgs, "subcmd" | "flags">): number {
+  const subcmd = input.subcmd;
+  const flags = input.flags;
+
   if (subcmd === "list") {
     const config = loadConfig();
     if (!config.projects.length) {
@@ -247,7 +259,7 @@ export function handleProjectsCommand({ subcmd, flags }) {
   if (subcmd === "add") {
     const name = flags.name;
     const repoPath = flags.path;
-    if (!name || !repoPath) {
+    if (!name || !repoPath || typeof name !== "string" || typeof repoPath !== "string") {
       console.error("缺少参数：--name / --path");
       return 1;
     }
@@ -260,7 +272,7 @@ export function handleProjectsCommand({ subcmd, flags }) {
 
   if (subcmd === "remove") {
     const name = flags.name;
-    if (!name) {
+    if (!name || typeof name !== "string") {
       console.error("缺少参数：--name");
       return 1;
     }

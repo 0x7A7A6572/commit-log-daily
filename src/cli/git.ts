@@ -1,18 +1,25 @@
-import { clearGitAuthorFilter, loadConfig, setGitAuthorFilter } from "../config.js";
+import { clearGitAuthorFilter, loadConfig, setGitAuthorFilter, setGitNoiseFilter, type Project } from "../config.js";
 import { detectAuthorPattern } from "../git.js";
+import { formatKeyValueTable } from "../utils/cli.js";
 
-export async function manageGitInteractive(inquirer) {
+export async function manageGitInteractive(inquirer: any): Promise<void> {
   for (;;) {
     const config = loadConfig();
-    const current = String(config?.git?.author ?? "").trim();
+    const currentAuthor = String(config?.git?.author ?? "").trim();
+    const noiseEnabled = Boolean(config?.git?.filterNoise);
+    const table = formatKeyValueTable([
+      { k: "Author 过滤", v: currentAuthor || "无" },
+      { k: "过滤无意义提交", v: noiseEnabled ? "开" : "关" },
+    ]);
     const { action } = await inquirer.prompt([
       {
         type: "list",
         name: "action",
-        message: `Git 配置（提交人过滤：${current || "无"}）`,
+        message: `Git 配置\n\n${table}`,
         choices: [
           { name: "设置提交人过滤（只看自己）", value: "set" },
           { name: "清空提交人过滤（看全员）", value: "clear" },
+          { name: noiseEnabled ? "关闭过滤无意义提交" : "启用过滤无意义提交", value: "toggleNoise" },
           { name: "返回", value: "back" },
         ],
       },
@@ -30,12 +37,18 @@ export async function manageGitInteractive(inquirer) {
       await configureAuthorInteractive(inquirer, config.projects);
       continue;
     }
+
+    if (action === "toggleNoise") {
+      setGitNoiseFilter(!noiseEnabled);
+      console.log(noiseEnabled ? "已关闭过滤。" : "已启用过滤。");
+      continue;
+    }
   }
 }
 
-export async function configureAuthorInteractive(inquirer, projects) {
+export async function configureAuthorInteractive(inquirer: any, projects: Project[]): Promise<string> {
   const list = Array.isArray(projects) ? projects : [];
-  const choices = [];
+  const choices: Array<{ name: string; value: string }> = [];
   for (const p of list) {
     const detected = detectAuthorPattern(p.path);
     if (detected) choices.push({ name: `${p.name}: ${detected}`, value: detected });
@@ -53,7 +66,7 @@ export async function configureAuthorInteractive(inquirer, projects) {
 
   if (picked === "__manual__") {
     const { author } = await inquirer.prompt([
-      { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v) => (String(v).trim() ? true : "必填") },
+      { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
     ]);
     setGitAuthorFilter(author);
     console.log("已保存。");
@@ -64,4 +77,3 @@ export async function configureAuthorInteractive(inquirer, projects) {
   console.log("已保存。");
   return String(picked).trim();
 }
-

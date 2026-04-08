@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
 
-export function getRangeByPreset(preset, now = new Date()) {
+export type RangePreset = "daily" | "weekly" | "monthly" | "yearly";
+export type DateRange = { start: Date; end: Date };
+
+export function getRangeByPreset(preset: RangePreset, now: Date = new Date()): DateRange {
   const end = new Date(now);
   const start = new Date(now);
 
-  const normalizeStartOfDay = (d) => {
+  const normalizeStartOfDay = (d: Date) => {
     d.setHours(0, 0, 0, 0);
     return d;
   };
@@ -37,7 +40,7 @@ export function getRangeByPreset(preset, now = new Date()) {
   throw new Error(`未知的范围预设: ${preset}`);
 }
 
-export function parseDateInput(value) {
+export function parseDateInput(value: unknown): Date | null {
   const raw = String(value ?? "").trim();
   if (!raw) return null;
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -50,21 +53,21 @@ export function parseDateInput(value) {
   return d;
 }
 
-export function toIsoStrict(d) {
+export function toIsoStrict(d: string | number | Date): string {
   return new Date(d).toISOString();
 }
 
-export function readGitConfigValue({ repoPath, key }) {
-  const k = String(key ?? "").trim();
+export function readGitConfigValue(input: { repoPath: string; key: unknown }): string {
+  const k = String(input.key ?? "").trim();
   if (!k) return "";
 
-  const result = spawnSync("git", ["-C", repoPath, "config", "--get", k], { encoding: "utf8" });
+  const result = spawnSync("git", ["-C", input.repoPath, "config", "--get", k], { encoding: "utf8" });
   if (result.error) return "";
   if (result.status !== 0) return "";
   return String(result.stdout ?? "").trim();
 }
 
-export function detectAuthorPattern(repoPath) {
+export function detectAuthorPattern(repoPath: string): string {
   const email = readGitConfigValue({ repoPath, key: "user.email" });
   if (email) return email;
   const name = readGitConfigValue({ repoPath, key: "user.name" });
@@ -72,19 +75,27 @@ export function detectAuthorPattern(repoPath) {
   return "";
 }
 
-export function readGitLog({ repoPath, start, end, maxCommits = 500, authorPattern = "" }) {
-  const since = toIsoStrict(start);
-  const until = toIsoStrict(end);
+export type GitCommit = { hash: string; author: string; date: string; subject: string };
+
+export function readGitLog(input: {
+  repoPath: string;
+  start: Date;
+  end: Date;
+  maxCommits?: number;
+  authorPattern?: string;
+}): GitCommit[] {
+  const since = toIsoStrict(input.start);
+  const until = toIsoStrict(input.end);
 
   const args = [
     "-C",
-    repoPath,
+    input.repoPath,
     "log",
     `--since=${since}`,
     `--until=${until}`,
-    ...(String(authorPattern ?? "").trim() ? [`--author=${String(authorPattern).trim()}`] : []),
+    ...(String(input.authorPattern ?? "").trim() ? [`--author=${String(input.authorPattern).trim()}`] : []),
     `-n`,
-    String(maxCommits),
+    String(input.maxCommits ?? 500),
     "--pretty=format:%H%x09%an%x09%ad%x09%s",
     "--date=iso-strict",
   ];

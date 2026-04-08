@@ -1,12 +1,10 @@
-import path from "node:path";
-
-export function buildHelpText({ argv, configFilePath = "" }) {
-  const bin = path.basename(argv?.[1] || "commit-log-daily");
+export function buildHelpText(input: { argv: string[]; configFilePath?: string }): string {
+  const bin = "clogd";
   const lines = [
     "",
     "commit-log-daily",
     "",
-    ...(String(configFilePath).trim() ? [`配置文件：${String(configFilePath).trim()}`, ""] : []),
+    ...(String(input.configFilePath ?? "").trim() ? [`配置文件：${String(input.configFilePath).trim()}`, ""] : []),
     "用法：",
     `  ${bin}                          进入交互模式`,
     `  ${bin} projects list            查看项目列表`,
@@ -21,10 +19,10 @@ export function buildHelpText({ argv, configFilePath = "" }) {
   return lines.join("\n");
 }
 
-export function printHelp(argv, configFilePath = "") {
+export function printHelp(argv: string[], configFilePath: string = ""): void {
   console.log(buildHelpText({ argv, configFilePath }));
 }
 
-export function printAppInfo({ argv, configFilePath = "" }) {
-  console.log(buildHelpText({ argv, configFilePath }));
+export function printAppInfo(input: { argv: string[]; configFilePath?: string }): void {
+  console.log(buildHelpText({ argv: input.argv, configFilePath: input.configFilePath ?? "" }));
 }

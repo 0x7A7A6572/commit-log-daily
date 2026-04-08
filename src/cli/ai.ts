@@ -1,33 +1,13 @@
 import { clearAiConfig, loadConfig, updateAiConfig } from "../config.js";
-import { maskSecret } from "../utils/cli.js";
+import { maskSecret, formatKeyValueTable } from "../utils/cli.js";
 import { listPromptChoices } from "../ai/prompt.js";
 
-function formatKeyValueTable(rows) {
-  const normalized = (Array.isArray(rows) ? rows : []).map((r) => ({
-    k: String(r?.k ?? ""),
-    v: String(r?.v ?? ""),
-  }));
-  const keyWidth = Math.max("字段".length, ...normalized.map((r) => r.k.length));
-  const valWidth = Math.max("值".length, ...normalized.map((r) => r.v.length));
-
-  const line = `+${"-".repeat(keyWidth + 2)}+${"-".repeat(valWidth + 2)}+`;
-  const cell = (text, width) => ` ${String(text).padEnd(width, " ")} `;
-
-  const out = [];
-  out.push(line);
-  out.push(`|${cell("字段", keyWidth)}|${cell("值", valWidth)}|`);
-  out.push(line);
-  for (const r of normalized) out.push(`|${cell(r.k, keyWidth)}|${cell(r.v, valWidth)}|`);
-  out.push(line);
-  return out.join("\n");
+function buildPromptSourceChoices(): Array<{ name: string; value: { kind: "builtin"; id: string } | { kind: "file" } }> {
+  const builtin = listPromptChoices().map((p) => ({ name: `内置：${p.name} (${p.id})`, value: { kind: "builtin", id: p.id } as const }));
+  return [...builtin, { name: "自定义：从文件加载", value: { kind: "file" } as const }];
 }
 
-function buildPromptSourceChoices() {
-  const builtin = listPromptChoices().map((p) => ({ name: `内置：${p.name} (${p.id})`, value: { kind: "builtin", id: p.id } }));
-  return [...builtin, { name: "自定义：从文件加载", value: { kind: "file" } }];
-}
-
-export async function manageAiInteractive(inquirer) {
+export async function manageAiInteractive(inquirer: any): Promise<void> {
   for (;;) {
     const config = loadConfig();
     const current = config?.ai ?? {};
@@ -84,7 +64,7 @@ export async function manageAiInteractive(inquirer) {
   }
 }
 
-async function configureEndpoint(inquirer) {
+async function configureEndpoint(inquirer: any): Promise<void> {
   const config = loadConfig();
   const current = config?.ai ?? {};
   const currentKey = String(current?.auth?.apiKey ?? "").trim();
@@ -93,7 +73,7 @@ async function configureEndpoint(inquirer) {
   let nextApiKey = currentKey;
   if (!hasExistingKey) {
     const { apiKey } = await inquirer.prompt([
-      { type: "password", name: "apiKey", message: "AI_API_KEY", mask: "*", validate: (v) => (String(v).trim() ? true : "必填") },
+      { type: "password", name: "apiKey", message: "AI_API_KEY", mask: "*", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
     ]);
     nextApiKey = String(apiKey).trim();
   } else {
@@ -102,7 +82,7 @@ async function configureEndpoint(inquirer) {
     ]);
     if (updateKey) {
       const { apiKey } = await inquirer.prompt([
-        { type: "password", name: "apiKey", message: "AI_API_KEY（更新）", mask: "*", validate: (v) => (String(v).trim() ? true : "必填") },
+        { type: "password", name: "apiKey", message: "AI_API_KEY（更新）", mask: "*", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
       ]);
       nextApiKey = String(apiKey).trim();
     }
@@ -112,16 +92,14 @@ async function configureEndpoint(inquirer) {
     baseUrl: current?.endpoint?.baseUrl || "https://api.openai.com",
     model: current?.endpoint?.model || "gpt-4.1-mini",
     timeoutMs:
-      Number.isFinite(Number(current?.endpoint?.timeoutMs)) && Number(current?.endpoint?.timeoutMs) > 0
-        ? String(Number(current.endpoint.timeoutMs))
-        : "20000",
+      Number.isFinite(Number(current?.endpoint?.timeoutMs)) && Number(current?.endpoint?.timeoutMs) > 0 ? String(Number(current.endpoint.timeoutMs)) : "20000",
     stream: Boolean(current?.endpoint?.stream),
   };
 
   const answers = await inquirer.prompt([
-    { type: "input", name: "baseUrl", message: "AI_BASE_URL", default: defaults.baseUrl, validate: (v) => (String(v).trim() ? true : "必填") },
-    { type: "input", name: "model", message: "AI_MODEL", default: defaults.model, validate: (v) => (String(v).trim() ? true : "必填") },
-    { type: "input", name: "timeoutMs", message: "AI_TIMEOUT_MS（毫秒）", default: defaults.timeoutMs, validate: (v) => (Number(String(v).trim()) > 0 ? true : "必须是正数") },
+    { type: "input", name: "baseUrl", message: "AI_BASE_URL", default: defaults.baseUrl, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "model", message: "AI_MODEL", default: defaults.model, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+    { type: "input", name: "timeoutMs", message: "AI_TIMEOUT_MS（毫秒）", default: defaults.timeoutMs, validate: (v: unknown) => (Number(String(v).trim()) > 0 ? true : "必须是正数") },
     { type: "confirm", name: "stream", message: "启用流式输出到控制台（stream）？", default: defaults.stream },
   ]);
 
@@ -139,12 +117,10 @@ async function configureEndpoint(inquirer) {
   console.log("提示：apiKey 会以明文存储在本机配置文件中。");
 }
 
-async function configurePrompt(inquirer) {
+async function configurePrompt(inquirer: any): Promise<void> {
   const config = loadConfig();
   const current = config?.ai ?? {};
-  const answers = await inquirer.prompt([
-    { type: "list", name: "promptSource", message: "Prompt 选择", choices: buildPromptSourceChoices() },
-  ]);
+  const answers = await inquirer.prompt([{ type: "list", name: "promptSource", message: "Prompt 选择", choices: buildPromptSourceChoices() }]);
 
   let promptId = current?.prompt?.id || "default";
   let promptPath = current?.prompt?.path || "";
@@ -154,7 +130,7 @@ async function configurePrompt(inquirer) {
     promptPath = "";
   } else {
     const r = await inquirer.prompt([
-      { type: "input", name: "promptPath", message: "自定义 Prompt 文件路径（txt/md 均可）", default: promptPath, validate: (v) => (String(v).trim() ? true : "必填") },
+      { type: "input", name: "promptPath", message: "自定义 Prompt 文件路径（txt/md 均可）", default: promptPath, validate: (v: unknown) => (String(v).trim() ? true : "必填") },
     ]);
     promptId = "default";
     promptPath = String(r.promptPath).trim();
@@ -164,18 +140,16 @@ async function configurePrompt(inquirer) {
   console.log("已保存。");
 }
 
-async function configureSkills(inquirer) {
+async function configureSkills(inquirer: any): Promise<void> {
   const config = loadConfig();
   const current = config?.ai ?? {};
   const currentPath = String(current?.skills?.path ?? "").trim();
-  const r = await inquirer.prompt([
-    { type: "input", name: "skillsPath", message: "Skills 文件路径（可选，留空=不注入）", default: currentPath },
-  ]);
+  const r = await inquirer.prompt([{ type: "input", name: "skillsPath", message: "Skills 文件路径（可选，留空=不注入）", default: currentPath }]);
   updateAiConfig({ skills: { path: String(r.skillsPath ?? "").trim() } });
   console.log("已保存。");
 }
 
-export async function setupAiOnce(inquirer) {
+export async function setupAiOnce(inquirer: any): Promise<void> {
   await configureEndpoint(inquirer);
   const { more } = await inquirer.prompt([{ type: "confirm", name: "more", message: "继续配置 Prompt / Skills？", default: true }]);
   if (!more) return;
