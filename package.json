@@ -8,6 +8,13 @@
     "cld": "bin/commit-log-daily.js",
     "clogd": "bin/commit-log-daily.js"
   },
+  "publishConfig": {
+    "registry": "https://www.npmjs.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/commit-log-daily.git"
+  },
   "main": "bin/commit-log-daily.js",
   "files": [
     "bin",
@@ -18,7 +25,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "pnpm -s build && node bin/commit-log-daily.js",
-    "test": "pnpm -s build && node bin/commit-log-daily.js --help"
+    "test": "pnpm -s build && node bin/commit-log-daily.js --help",
+    "npm:publish": "npm publish --registry=https://registry.npmjs.org"
   },
   "keywords": [],
   "author": "",
