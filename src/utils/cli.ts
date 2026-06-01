@@ -1,5 +1,6 @@
 import path from "node:path";
 import stringWidth from "string-width";
+import chalk from "chalk";
 
 export type ParsedArgs = {
   cmd: string;
@@ -80,4 +81,29 @@ export function formatKeyValueTable(rows: KeyValueRow[] | unknown): string {
   for (const r of normalized) out.push(`|${cell(r.k, keyWidth)}|${cell(r.v, valWidth)}|`);
   out.push(line);
   return out.join("\n");
+}
+
+export type CliChoice<T = unknown> = { name: string; value: T; description?: string };
+
+export function formatCliChoiceName(input: { title: unknown; stats?: unknown; status?: unknown }): string {
+  const title = String(input.title ?? "").trim();
+  const statsRaw = String(input.stats ?? "").trim();
+  const statusRaw = String(input.status ?? "").trim();
+  const parts: string[] = [];
+  if (title) parts.push(title);
+  if (statsRaw) parts.push(chalk.gray(`(${statsRaw})`));
+  if (statusRaw) parts.push(chalk.yellow(`[${statusRaw}]`));
+  return parts.join(" ").trim();
+}
+
+export function makeCliChoice<T>(input: { title: unknown; value: T; stats?: unknown; status?: unknown; description?: unknown }): CliChoice<T> {
+  const name = formatCliChoiceName({ title: input.title, stats: input.stats, status: input.status });
+  const description = String(input.description ?? "").trim();
+  if (description) return { name, value: input.value, description };
+  return { name, value: input.value };
+}
+
+export function makeBackChoice<T>(input: { value: T; title?: unknown }): CliChoice<T> {
+  const title = String(input.title ?? "返回").trim() || "返回";
+  return { name: chalk.gray(title), value: input.value };
 }

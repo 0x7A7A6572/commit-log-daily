@@ -22,6 +22,32 @@ export type AiConfig = {
 export type ReportOutputMode = "stdout" | "file" | "both";
 export type ReportConfig = { outputDir: string; outputMode: ReportOutputMode };
 
+export type GroupingSource = "subject" | "branches";
+export type GroupingExtractor =
+  | { kind: "regex"; source: GroupingSource; pattern: string; flags?: string; group?: number; keyPrefix?: string }
+  | { kind: "builtin"; id: "legacyRequirement" };
+
+export type GroupingRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  displayStyle: "plain" | "requirementKey";
+  extractors: GroupingExtractor[];
+  unknownKey: string;
+};
+
+export type GroupingConfig = {
+  enabled: boolean;
+  branchesContainsEnabled: boolean;
+  defaultRuleId: string;
+  rules: GroupingRule[];
+};
+
+export type FeatureConfig = {
+  requirementGrouping: boolean;
+  grouping: GroupingConfig;
+};
+
 export type AppConfig = {
   version: number;
   projects: Project[];
@@ -29,6 +55,7 @@ export type AppConfig = {
   projectsScan: ProjectsScanConfig;
   ai: AiConfig;
   report: ReportConfig;
+  features: FeatureConfig;
 };
 
 const CONFIG_DIR_NAME = ".commit-log-daily";
@@ -57,6 +84,24 @@ const DEFAULT_CONFIG: AppConfig = {
   report: {
     outputDir: "",
     outputMode: "stdout",
+  },
+  features: {
+    requirementGrouping: false,
+    grouping: {
+      enabled: true,
+      branchesContainsEnabled: false,
+      defaultRuleId: "",
+      rules: [
+        {
+          id: "legacy-requirement",
+          name: "Legacy: 按需求/任务分组（分支/提交推断）",
+          enabled: false,
+          displayStyle: "requirementKey",
+          extractors: [{ kind: "builtin", id: "legacyRequirement" }],
+          unknownKey: "unknown",
+        },
+      ],
+    },
   },
 };
 
@@ -103,6 +148,18 @@ function mergeAiConfig(current: unknown, patch: unknown): Record<string, unknown
   return next;
 }
 
+function parseBooleanLike(raw: unknown, fallback: boolean): boolean {
+  if (raw === true) return true;
+  if (raw === false) return false;
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!v) return fallback;
+  if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
+  if (v === "0" || v === "false" || v === "no" || v === "off") return false;
+  return fallback;
+}
+
 function normalizeConfig(input: unknown): AppConfig {
   const parsed = isPlainObject(input) ? input : {};
 
@@ -115,14 +172,7 @@ function normalizeConfig(input: unknown): AppConfig {
   const git = isPlainObject(parsed.git) ? parsed.git : {};
   const author = String(git.author ?? "").trim();
   const filterNoiseRaw = Object.prototype.hasOwnProperty.call(git, "filterNoise") ? git.filterNoise : false;
-  const filterNoise =
-    filterNoiseRaw === true ||
-    String(filterNoiseRaw ?? "")
-      .trim()
-      .toLowerCase() === "true" ||
-    String(filterNoiseRaw ?? "")
-      .trim()
-      .toLowerCase() === "1";
+  const filterNoise = parseBooleanLike(filterNoiseRaw, false);
 
   const projectsScan = isPlainObject(parsed.projectsScan) ? parsed.projectsScan : {};
   const scanRootDir = String(projectsScan.rootDir ?? DEFAULT_CONFIG.projectsScan.rootDir).trim();
@@ -146,14 +196,7 @@ function normalizeConfig(input: unknown): AppConfig {
     Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? Math.floor(timeoutMsRaw) : DEFAULT_CONFIG.ai.endpoint.timeoutMs;
 
   const streamRaw = Object.prototype.hasOwnProperty.call(ai, "stream") ? ai.stream : endpointObj.stream;
-  const stream =
-    streamRaw === true ||
-    String(streamRaw ?? "")
-      .trim()
-      .toLowerCase() === "true" ||
-    String(streamRaw ?? "")
-      .trim()
-      .toLowerCase() === "1";
+  const stream = parseBooleanLike(streamRaw, Boolean(DEFAULT_CONFIG.ai.endpoint.stream));
 
   const promptId = String(ai.promptId ?? promptObj.id ?? DEFAULT_CONFIG.ai.prompt.id).trim() || DEFAULT_CONFIG.ai.prompt.id;
   const promptPath = String(ai.promptPath ?? promptObj.path ?? "").trim();
@@ -165,6 +208,77 @@ function normalizeConfig(input: unknown): AppConfig {
   const outputMode: ReportOutputMode = (["stdout", "file", "both"] as const).includes(outputModeRaw as ReportOutputMode)
     ? (outputModeRaw as ReportOutputMode)
     : DEFAULT_CONFIG.report.outputMode;
+
+  const featuresObj = isPlainObject(parsed.features) ? parsed.features : {};
+  const requirementGroupingRaw = Object.prototype.hasOwnProperty.call(featuresObj, "requirementGrouping")
+    ? featuresObj.requirementGrouping
+    : false;
+  const requirementGrouping = parseBooleanLike(requirementGroupingRaw, Boolean(DEFAULT_CONFIG.features.requirementGrouping));
+
+  const groupingObj = isPlainObject(featuresObj.grouping) ? featuresObj.grouping : {};
+  const groupingEnabled = parseBooleanLike(
+    Object.prototype.hasOwnProperty.call(groupingObj, "enabled") ? groupingObj.enabled : undefined,
+    true,
+  );
+  const branchesContainsEnabledSpecified = Object.prototype.hasOwnProperty.call(groupingObj, "branchesContainsEnabled");
+  const branchesContainsEnabledRaw = branchesContainsEnabledSpecified ? (groupingObj as any).branchesContainsEnabled : undefined;
+  const defaultRuleId = String(groupingObj.defaultRuleId ?? DEFAULT_CONFIG.features.grouping.defaultRuleId).trim() || DEFAULT_CONFIG.features.grouping.defaultRuleId;
+  const rulesRaw = Array.isArray(groupingObj.rules) ? groupingObj.rules : [];
+  const normalizedRules: GroupingRule[] = rulesRaw
+    .filter((r): r is Record<string, unknown> => isPlainObject(r))
+    .map((r) => {
+      const id = String(r.id ?? "").trim();
+      const name = String(r.name ?? "").trim() || id;
+      const enabled = parseBooleanLike(Object.prototype.hasOwnProperty.call(r, "enabled") ? r.enabled : true, true);
+      const displayStyleRaw = String(r.displayStyle ?? "plain").trim();
+      const displayStyle: GroupingRule["displayStyle"] = (["plain", "requirementKey"] as const).includes(displayStyleRaw as any)
+        ? (displayStyleRaw as GroupingRule["displayStyle"])
+        : "plain";
+      const unknownKey = String(r.unknownKey ?? "unknown").trim() || "unknown";
+      const extractorsRaw = Array.isArray(r.extractors) ? r.extractors : [];
+      const extractors = extractorsRaw
+        .filter((e): e is Record<string, unknown> => isPlainObject(e))
+        .map((e) => {
+          const kind = String(e.kind ?? "").trim();
+          if (kind === "builtin") {
+            const bid = String(e.id ?? "").trim();
+            if (bid === "legacyRequirement") return { kind: "builtin", id: "legacyRequirement" } as GroupingExtractor;
+            return null;
+          }
+          if (kind === "regex") {
+            const sourceRaw = String(e.source ?? "").trim();
+            const source: GroupingSource = sourceRaw === "branches" ? "branches" : "subject";
+            const pattern = String(e.pattern ?? "").trim();
+            if (!pattern) return null;
+            const groupRaw = Number(e.group ?? 1);
+            const group = Number.isFinite(groupRaw) && groupRaw >= 0 ? Math.floor(groupRaw) : 1;
+            const flags = String(e.flags ?? "").trim();
+            const keyPrefix = String(e.keyPrefix ?? "").trim();
+            const out: GroupingExtractor = {
+              kind: "regex",
+              source,
+              pattern,
+              ...(flags ? { flags } : {}),
+              ...(Number.isFinite(group) ? { group } : {}),
+              ...(keyPrefix ? { keyPrefix } : {}),
+            };
+            return out;
+          }
+          return null;
+        })
+        .filter((x): x is GroupingExtractor => x != null);
+      if (!id) return null;
+      return { id, name, enabled, displayStyle, extractors, unknownKey };
+    })
+    .filter((x): x is GroupingRule => Boolean(x))
+    .filter((r) => r.id && r.extractors.length);
+  const rules = normalizedRules.length ? normalizedRules : DEFAULT_CONFIG.features.grouping.rules;
+  const branchesContainsEnabled =
+    branchesContainsEnabledSpecified
+      ? parseBooleanLike(branchesContainsEnabledRaw, Boolean(DEFAULT_CONFIG.features.grouping.branchesContainsEnabled))
+      : rules.some((r) => r.enabled && r.extractors.some((e) => e.kind === "builtin" || (e.kind === "regex" && e.source === "branches")));
+
+  const normalizedRequirementGrouping = requirementGrouping;
 
   return {
     ...DEFAULT_CONFIG,
@@ -179,6 +293,7 @@ function normalizeConfig(input: unknown): AppConfig {
       skills: { path: skillsPath },
     },
     report: { outputDir, outputMode },
+    features: { requirementGrouping: normalizedRequirementGrouping, grouping: { enabled: groupingEnabled, branchesContainsEnabled, defaultRuleId, rules } },
   };
 }
 
@@ -314,4 +429,23 @@ export function updateProjectsScanConfig(patch: unknown): ProjectsScanConfig {
   const next = normalizeConfig({ ...config, projectsScan: { ...config.projectsScan, ...(isPlainObject(patch) ? patch : {}) } });
   saveConfig(next);
   return next.projectsScan;
+}
+
+export function updateFeaturesConfig(patch: unknown): FeatureConfig {
+  const config = loadConfig();
+  const p = isPlainObject(patch) ? patch : {};
+  const current = isPlainObject(config.features) ? config.features : {};
+  const currentGrouping = isPlainObject((current as any).grouping) ? (current as any).grouping : {};
+  const patchGrouping = isPlainObject((p as any).grouping) ? (p as any).grouping : null;
+  const mergedGrouping = patchGrouping
+    ? {
+        ...currentGrouping,
+        ...patchGrouping,
+        rules: Array.isArray(patchGrouping.rules) ? patchGrouping.rules : currentGrouping.rules,
+      }
+    : currentGrouping;
+  const mergedFeatures = patchGrouping ? { ...current, ...p, grouping: mergedGrouping } : { ...current, ...p };
+  const next = normalizeConfig({ ...config, features: mergedFeatures });
+  saveConfig(next);
+  return next.features;
 }

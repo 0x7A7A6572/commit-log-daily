@@ -4,10 +4,11 @@ import process from "node:process";
 import { loadConfig, setGitAuthorFilter, updateReportConfig, upsertProject, validateRepoPath, type AppConfig, type Project } from "../config.js";
 import { detectAuthorPattern, getRangeByPreset, parseDateInput, type DateRange, type RangePreset } from "../git.js";
 import { isAiConfigured, isAiStreamEnabled } from "../ai.js";
-import { formatDateYmd, formatRangeLabel, resolveOutputPath, sanitizeFileName } from "../utils/cli.js";
+import { formatDateYmd, formatRangeLabel, resolveOutputPath, sanitizeFileName, makeCliChoice } from "../utils/cli.js";
 import { buildReportContent, collectCommits } from "../report/service.js";
 import { writeReportToFile } from "../report/output.js";
 import { setupAiOnce } from "./ai.js";
+import chalk from "chalk";
 
 async function ensureAtLeastOneProjectInteractive(inquirer: any): Promise<AppConfig> {
   const config = loadConfig();
@@ -31,11 +32,11 @@ async function chooseRangeInteractive(inquirer: any): Promise<{ preset: RangePre
       name: "preset",
       message: "选择摘要类型",
       choices: [
-        { name: "日报（今天 00:00 至今）", value: "daily" },
-        { name: "周报（本周一 00:00 至今）", value: "weekly" },
-        { name: "月报（本月 1 号 00:00 至今）", value: "monthly" },
-        { name: "年报（今年 1 月 1 号 00:00 至今）", value: "yearly" },
-        { name: "自定义（输入起止日期）", value: "custom" },
+        makeCliChoice({ title: "日报", description: "今天 00:00 至今", value: "daily" }),
+        makeCliChoice({ title: "周报", description: "本周一 00:00 至今", value: "weekly" }),
+        makeCliChoice({ title: "月报", description: "本月 1 号 00:00 至今", value: "monthly" }),
+        makeCliChoice({ title: "年报", description: "今年 1 月 1 号 00:00 至今", value: "yearly" }),
+        makeCliChoice({ title: "自定义", description: "输入起止日期", value: "custom" }),
       ],
     },
   ]);
@@ -113,11 +114,12 @@ export async function generateReportInteractive(inquirer: any): Promise<void> {
       type: "checkbox",
       name: "selected",
       message: "选择要生成摘要的项目[可多选]",
-      choices: config.projects.map((p) => ({ name: `${p.name} (${p.path})`, value: p.name })),
+      loop: false,
+      choices: config.projects.map((p) => makeCliChoice({ title: p.name, stats: p.path, value: p.name })),
       validate: (v: unknown) => (Array.isArray(v) && v.length ? true : "至少选一个"),
     },
   ]);
-
+  if (selected.includes("exit")) return;
   const { preset, range } = await chooseRangeInteractive(inquirer);
   const rangeLabel = formatRangeLabel(range);
 
@@ -127,42 +129,44 @@ export async function generateReportInteractive(inquirer: any): Promise<void> {
 
   const cfg1 = loadConfig();
   let authorPattern = String(cfg1?.git?.author ?? "").trim();
-  const wasAuthorEmpty = !authorPattern;
-  const { onlyMine } = await inquirer.prompt([{ type: "confirm", name: "onlyMine", message: "只统计我的提交（按作者过滤）？", default: true }]);
-
-  if (onlyMine) {
-    if (!authorPattern) {
-      const candidates: Array<{ name: string; value: string }> = [];
-      for (const p of selectedProjects) {
-        const detected = detectAuthorPattern(p.path);
-        if (detected) candidates.push({ name: `${p.name}: ${detected}`, value: detected });
-      }
-      if (candidates.length) {
-        const { picked } = await inquirer.prompt([
-          { type: "list", name: "picked", message: "检测到 git 用户信息，选择一个用来过滤", choices: [...candidates, { name: "手动输入（邮箱/姓名/正则）", value: "__manual__" }] },
-        ]);
-        if (picked === "__manual__") {
-          const { author } = await inquirer.prompt([
-            { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
-          ]);
-          authorPattern = String(author).trim();
-        } else {
-          authorPattern = String(picked).trim();
-        }
-      } else {
+  if (!authorPattern) {
+    const candidates: Array<{ name: string; value: string }> = [];
+    const seen = new Set<string>();
+    for (const p of selectedProjects) {
+      const detected = String(detectAuthorPattern(p.path) ?? "").trim();
+      if (!detected) continue;
+      if (seen.has(detected)) continue;
+      seen.add(detected);
+      candidates.push(makeCliChoice({ title: p.name, stats: detected, value: detected }));
+    }
+    if (candidates.length === 1) {
+      authorPattern = String(candidates[0]?.value ?? "").trim();
+      if (authorPattern) setGitAuthorFilter(authorPattern);
+    } else if (candidates.length) {
+      const { picked } = await inquirer.prompt([
+        {
+          type: "list",
+          name: "picked",
+          message: "检测到 git 用户信息，选择一个用来过滤",
+          choices: [...candidates, makeCliChoice({ title: "手动输入", description: "邮箱/姓名/正则", value: "__manual__" })],
+        },
+      ]);
+      if (picked === "__manual__") {
         const { author } = await inquirer.prompt([
-          { type: "input", name: "author", message: "未检测到 user.email/user.name，请输入提交人过滤（邮箱/姓名/正则）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+          { type: "input", name: "author", message: "提交人过滤（传给 git log --author=...）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
         ]);
         authorPattern = String(author).trim();
+      } else {
+        authorPattern = String(picked).trim();
       }
-
-      if (wasAuthorEmpty && authorPattern) {
-        const { persist } = await inquirer.prompt([{ type: "confirm", name: "persist", message: `保存为默认过滤（${authorPattern}）？`, default: true }]);
-        if (persist) setGitAuthorFilter(authorPattern);
-      }
+      if (authorPattern) setGitAuthorFilter(authorPattern);
+    } else {
+      const { author } = await inquirer.prompt([
+        { type: "input", name: "author", message: "未检测到 user.email/user.name，请输入提交人过滤（邮箱/姓名/正则）", validate: (v: unknown) => (String(v).trim() ? true : "必填") },
+      ]);
+      authorPattern = String(author).trim();
+      if (authorPattern) setGitAuthorFilter(authorPattern);
     }
-  } else {
-    authorPattern = "";
   }
 
   const cfg2 = loadConfig();
@@ -200,12 +204,13 @@ export async function generateReportInteractive(inquirer: any): Promise<void> {
     projectsWithCommits,
     useAi: Boolean(useAi && useAiAvailable),
     aiConfig: finalConfig.ai,
+    features: finalConfig.features,
     stream: shouldStreamToStdout,
     onAiToken: shouldStreamToStdout ? (t) => process.stdout.write(String(t ?? "")) : null,
   });
   const content = result.content;
-  if (String(result.aiError ?? "").trim()) console.log(`\nAI 未使用，已降级为本地整理：${String(result.aiError).trim()}`);
-  else if (result.usedAi) console.log("\nAI 已启用：已使用 AI 归纳整理");
+  if (String(result.aiError ?? "").trim()) console.log(chalk.redBright(`\nAI 未使用，已降级为本地整理：${String(result.aiError).trim()}`));
+  else if (result.usedAi) console.log(chalk.bgGreen("\nAI 已启用：已使用 AI 归纳整理"));
 
   if (outputMode === "stdout" || outputMode === "both") {
     if (shouldStreamToStdout && result.usedAi) {

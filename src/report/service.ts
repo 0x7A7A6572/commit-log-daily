@@ -50,6 +50,7 @@ export async function buildReportContent(input: {
   projectsWithCommits: ProjectWithCommits[];
   useAi: boolean;
   aiConfig: AiConfig;
+  features?: { requirementGrouping?: boolean } | null;
   stream?: boolean;
   onAiToken?: ((token: string) => void) | null;
 }): Promise<{ content: string; usedAi: boolean; aiError: string }> {
@@ -87,6 +88,7 @@ export async function buildReportContent(input: {
       authorPattern: input.authorPattern,
       projects: input.projectsWithCommits,
       aiConfig: input.aiConfig,
+      features: input.features ?? null,
       stream: input.stream ?? false,
       onToken: input.onAiToken ?? null,
     });

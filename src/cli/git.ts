@@ -1,12 +1,22 @@
-import { clearGitAuthorFilter, loadConfig, setGitAuthorFilter, setGitNoiseFilter, type Project } from "../config.js";
-import { detectAuthorPattern } from "../git.js";
-import { formatKeyValueTable } from "../utils/cli.js";
+import { loadConfig, setGitAuthorFilter, setGitNoiseFilter, type Project } from "../config.js";
+import { detectAuthorPattern, listGitAuthorsRecent } from "../git.js";
+import { formatKeyValueTable, makeBackChoice, makeCliChoice } from "../utils/cli.js";
 
 export async function manageGitInteractive(inquirer: any): Promise<void> {
   for (;;) {
     const config = loadConfig();
-    const currentAuthor = String(config?.git?.author ?? "").trim();
+    let currentAuthor = String(config?.git?.author ?? "").trim();
     const noiseEnabled = Boolean(config?.git?.filterNoise);
+    if (!currentAuthor) {
+      for (const p of Array.isArray(config.projects) ? config.projects : []) {
+        const detected = detectAuthorPattern(String((p as any)?.path ?? ""));
+        if (!detected) continue;
+        setGitAuthorFilter(detected);
+        currentAuthor = String(detected).trim();
+        console.log(`已从本地 git 配置检测到提交人：${currentAuthor}`);
+        break;
+      }
+    }
     const table = formatKeyValueTable([
       { k: "Author 过滤", v: currentAuthor || "无" },
       { k: "过滤无意义提交", v: noiseEnabled ? "开" : "关" },
@@ -17,21 +27,14 @@ export async function manageGitInteractive(inquirer: any): Promise<void> {
         name: "action",
         message: `Git 配置\n\n${table}`,
         choices: [
-          { name: "设置提交人过滤（只看自己）", value: "set" },
-          { name: "清空提交人过滤（看全员）", value: "clear" },
+          makeCliChoice({ title: "设置提交人过滤", description: "只看自己", value: "set" }),
           { name: noiseEnabled ? "关闭过滤无意义提交" : "启用过滤无意义提交", value: "toggleNoise" },
-          { name: "返回", value: "back" },
+          makeBackChoice({ value: "back" }),
         ],
       },
     ]);
 
     if (action === "back") return;
-
-    if (action === "clear") {
-      clearGitAuthorFilter();
-      console.log("已清空。");
-      continue;
-    }
 
     if (action === "set") {
       await configureAuthorInteractive(inquirer, config.projects);
@@ -49,18 +52,36 @@ export async function manageGitInteractive(inquirer: any): Promise<void> {
 export async function configureAuthorInteractive(inquirer: any, projects: Project[]): Promise<string> {
   const list = Array.isArray(projects) ? projects : [];
   const choices: Array<{ name: string; value: string }> = [];
+  const seen = new Set<string>();
   for (const p of list) {
-    const detected = detectAuthorPattern(p.path);
-    if (detected) choices.push({ name: `${p.name}: ${detected}`, value: detected });
+    const repoPath = String((p as any)?.path ?? "").trim();
+    if (!repoPath) continue;
+    const authors = listGitAuthorsRecent({ repoPath, maxCommits: 300 }).slice(0, 12);
+    for (const a of authors) {
+      const label = makeCliChoice({ title: `${p.name}: ${a.name}${a.email ? ` <${a.email}>` : ""}`, stats: a.count, value: a.email || a.name });
+      const value = a.email || a.name;
+      const key = `${repoPath}\t${value}`;
+      if (!value) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      choices.push({ name: label.name, value });
+    }
   }
-  choices.push({ name: "手动输入（邮箱/姓名/正则）", value: "__manual__" });
+  if (!choices.length) {
+    for (const p of list) {
+      const detected = detectAuthorPattern(p.path);
+      if (detected) choices.push(makeCliChoice({ title: p.name, stats: detected, value: detected }));
+    }
+  }
+  const manualChoice = makeCliChoice({ title: "手动输入", description: "邮箱/姓名/正则", value: "__manual__" });
+  choices.push(manualChoice);
 
   const { picked } = await inquirer.prompt([
     {
       type: "list",
       name: "picked",
-      message: choices.length > 1 ? "选择一个提交人标识" : "未检测到 user.email/user.name，手动输入",
-      choices: choices.length > 1 ? choices : [{ name: "手动输入（邮箱/姓名/正则）", value: "__manual__" }],
+      message: choices.length > 1 ? "选择一个提交人标识（来自近期提交作者）" : "未检测到近期作者信息，手动输入",
+      choices: choices.length > 1 ? choices : [manualChoice],
     },
   ]);
 

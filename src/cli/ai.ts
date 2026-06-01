@@ -1,10 +1,10 @@
 import { clearAiConfig, loadConfig, updateAiConfig } from "../config.js";
-import { maskSecret, formatKeyValueTable } from "../utils/cli.js";
+import { maskSecret, formatKeyValueTable, makeBackChoice, makeCliChoice } from "../utils/cli.js";
 import { listPromptChoices } from "../ai/prompt.js";
 
 function buildPromptSourceChoices(): Array<{ name: string; value: { kind: "builtin"; id: string } | { kind: "file" } }> {
-  const builtin = listPromptChoices().map((p) => ({ name: `内置：${p.name} (${p.id})`, value: { kind: "builtin", id: p.id } as const }));
-  return [...builtin, { name: "自定义：从文件加载", value: { kind: "file" } as const }];
+  const builtin = listPromptChoices().map((p) => makeCliChoice({ title: `内置：${p.name}`, stats: p.id, value: { kind: "builtin", id: p.id } as const }));
+  return [...builtin, makeCliChoice({ title: "自定义：从文件加载", value: { kind: "file" } as const })];
 }
 
 export async function manageAiInteractive(inquirer: any): Promise<void> {
@@ -38,7 +38,7 @@ export async function manageAiInteractive(inquirer: any): Promise<void> {
           { name: "配置 Prompt", value: "prompt" },
           { name: "配置 Skills", value: "skills" },
           { name: "清空 API Key", value: "clearKey" },
-          { name: "返回", value: "back" },
+          makeBackChoice({ value: "back" }),
         ],
       },
     ]);

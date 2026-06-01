@@ -1,7 +1,7 @@
 import { buildSummaryMessages } from "./ai/prompt.js";
 
 type ProjectCommit = { subject: string; author: string; date: string; hash: string };
-type ProjectWithCommits = { name: string; commits: ProjectCommit[] };
+type ProjectWithCommits = { name: string; path?: string; commits: ProjectCommit[] };
 
 function parseBool(raw: unknown): boolean {
   const v = String(raw ?? "")
@@ -144,6 +144,7 @@ export async function summarizeWithAi(input: {
   authorPattern?: string;
   projects: ProjectWithCommits[];
   aiConfig?: unknown;
+  features?: { requirementGrouping?: boolean } | null;
   stream?: boolean;
   onToken?: ((token: string) => void) | null;
 }): Promise<string> {
@@ -159,6 +160,7 @@ export async function summarizeWithAi(input: {
     authorPattern: input.authorPattern ?? "",
     projects: input.projects,
     aiConfig: input.aiConfig ?? null,
+    features: input.features ?? null,
   });
   const timeoutMs = getTimeoutMs(input.aiConfig);
 
