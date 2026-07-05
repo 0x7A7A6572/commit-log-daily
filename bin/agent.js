@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { startAgentTui } from "../dist/tui/app.js";
+import { startAgentTui } from "../dist/index.js";
 
 startAgentTui();
