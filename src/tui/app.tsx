@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { render, useInput } from 'ink';
+import { render } from 'ink';
 import { ChatView } from './ChatView.js';
 import { ConfigView } from './ConfigView.js';
 import { HistoryView } from './HistoryView.js';
@@ -15,12 +15,6 @@ function App() {
   const [view, setView] = useState<ViewMode>('chat');
   const { messages, isWaiting, handleSubmit, loadHistorySession } = useSession();
 
-  // Ctrl+E 切换配置视图
-  useInput((input, key) => {
-    if (key.ctrl && input === 'e') {
-      setView((prev) => (prev === 'config' ? 'chat' : 'config'));
-    }
-  });
 
   /** 处理斜杠命令 */
   const handleCommand = useCallback(

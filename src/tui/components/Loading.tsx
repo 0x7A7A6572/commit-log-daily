@@ -19,7 +19,7 @@ export function LoadingView({
       if (isLoading.current) {
         setIconIndex((prev) => (prev + 1) % loadChat.length);
       }
-    }, 500);
+    }, 100);
     return () => clearInterval(timer);
   }, [loadChat.length]);
 

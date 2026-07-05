@@ -22,6 +22,7 @@ const projectSchema = z.object({
 /** 报告配置 schema */
 const reportSchema = z.object({
   outputDir: z.string(),
+  template: z.string().default('default'),
 });
 
 /** 应用完整配置 schema */
@@ -61,6 +62,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   projects: [],
   report: {
     outputDir: '',
+    template: 'default',
   },
 };
 

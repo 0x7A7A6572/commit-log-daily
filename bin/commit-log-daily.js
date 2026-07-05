@@ -12,7 +12,6 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log("  cld-agent             启动 Agent TUI 交互模式");
   console.log("");
   console.log("交互模式中：");
-  console.log("  Ctrl+E    打开配置页");
   console.log("  Ctrl+C    退出");
   process.exit(0);
 }

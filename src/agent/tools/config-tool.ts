@@ -26,9 +26,9 @@ function formatConfigSummary(config: AppConfig): string {
     `  Model:    ${config.model.model}`,
     `  API Key:  ${apiKeyDisplay}`,
     '',
-    '【Git 作者】',
-    `  姓名: ${config.author.name || '未配置'}`,
-    `  邮箱: ${config.author.email || '未配置'}`,
+    '【Git 用户配置】',
+    `  git user.name: ${config.author.name || '未配置'}`,
+    `  git user.email: ${config.author.email || '未配置'}`,
     '',
     '【项目列表】',
   ];

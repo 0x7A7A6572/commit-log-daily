@@ -24,7 +24,7 @@ interface ConfigViewProps {
 
 /**
  * 独立配置页
- * 用户按 Ctrl+E 进入，Esc 返回
+ * 用户通过 /config 斜杠命令进入，Esc 返回
  */
 export function ConfigView({ onClose }: ConfigViewProps) {
   const [config, setConfig] = useState<AppConfig>(() => readConfig());
@@ -87,13 +87,13 @@ export function ConfigView({ onClose }: ConfigViewProps) {
 
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
-      <Box marginBottom={1}>
+      {/* 标题栏 */}
+      <Box flexDirection="column" marginBottom={1}>
         <Text bold color="cyan">
-          配置页
+          commit-log-daily · 配置
         </Text>
         <Text dimColor>
-          {' '}
-          | ↑↓ 导航 | E 编辑 | S 保存 | Esc 返回
+          ↑↓ 选择  E 编辑  Enter 确认  S 保存  Esc 返回
         </Text>
       </Box>
 
@@ -128,7 +128,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       {/* 作者配置 */}
       <SectionTitle title="Git 作者" />
       <ConfigField
-        label="姓名"
+        label="git user.name"
         value={config.author.name || '(未配置)'}
         focused={currentFocus === 'author-name'}
         editing={editing && currentFocus === 'author-name'}
@@ -136,7 +136,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
         onChangeEdit={setEditValue}
       />
       <ConfigField
-        label="邮箱"
+        label="git user.email"
         value={config.author.email || '(未配置)'}
         focused={currentFocus === 'author-email'}
         editing={editing && currentFocus === 'author-email'}
@@ -163,10 +163,6 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           </Text>
         </Box>
       ) : null}
-
-      <Box marginTop={1}>
-        <Text dimColor>Ctrl+S 保存 | Esc 返回</Text>
-      </Box>
     </Box>
   );
 }
@@ -193,12 +189,13 @@ function ConfigField(props: {
   sensitive?: boolean;
 }) {
   const pointer = props.focused ? '▸' : ' ';
-  const color = props.focused ? 'cyan' : undefined;
+  const labelColor = props.focused ? 'cyan' : 'white';
+  const valueColor = props.focused ? undefined : 'grey';
 
   if (props.editing) {
     return (
       <Box>
-        <Text color={color}>{pointer} {props.label}: </Text>
+        <Text color={labelColor}>{pointer} {props.label}: </Text>
         <TextInput
           value={props.editValue}
           onChange={props.onChangeEdit}
@@ -210,21 +207,11 @@ function ConfigField(props: {
 
   return (
     <Box>
-      <Text color={color}>{pointer} {props.label}: </Text>
-      <Text>{props.value}</Text>
+      <Text color={labelColor}>{pointer} {props.label}: </Text>
+      <Text color={valueColor}>{props.value}</Text>
     </Box>
   );
 }
-
-/** 焦点标签映射 */
-const FOCUS_LABELS: Record<FocusArea, string> = {
-  'model-baseUrl': 'Base URL',
-  'model-model': 'Model',
-  'model-apiKey': 'API Key',
-  'author-name': '作者姓名',
-  'author-email': '作者邮箱',
-  'outputDir': '输出目录',
-};
 
 /**
  * 从配置中读取当前焦点字段的值（不含脱敏）

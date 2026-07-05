@@ -4,10 +4,8 @@
   "description": "",
   "type": "module",
   "bin": {
-    "commit-log-daily": "bin/commit-log-daily.js",
-    "cld": "bin/commit-log-daily.js",
-    "clogd": "bin/commit-log-daily.js",
-    "cld-agent": "bin/agent.js"
+    "commit-log-daily": "bin/agent.js",
+    "clogd": "bin/agent.js"
   },
   "publishConfig": {
     "registry": "https://www.npmjs.com/"
@@ -16,7 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/0x7A7A6572/commit-log-daily.git"
   },
-  "main": "bin/commit-log-daily.js",
+  "main": "bin/agent.js",
   "files": [
     "bin",
     "dist",
@@ -25,12 +23,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "pnpm -s build && node bin/commit-log-daily.js",
+    "start": "pnpm -s build && node bin/agent.js",
     "agent": "pnpm -s build && node bin/agent.js",
-    "test": "pnpm -s build && node bin/commit-log-daily.js --help",
     "npm:publish": "npm publish --registry=https://registry.npmjs.org"
   },
-  "keywords": [],
+  "keywords": ["commit", "log", "daily", "git", "cli", "agent", "ai", "langchain"],
   "author": "",
   "license": "ISC",
   "dependencies": {

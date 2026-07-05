@@ -82,7 +82,7 @@ export function HistoryView({ onRestore, onBack }: HistoryViewProps) {
       {/* 标题栏 */}
       <Box paddingLeft={1} paddingRight={1}>
         <Text bold color="cyan">
-          {'⚡'} commit-log-daily
+          commit-log-daily
         </Text>
         <Text dimColor> · 历史会话 · q 返回</Text>
       </Box>

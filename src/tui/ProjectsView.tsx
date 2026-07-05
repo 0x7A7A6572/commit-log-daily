@@ -179,13 +179,12 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
       {/* 标题栏 */}
-      <Box marginBottom={1}>
+      <Box flexDirection="column" marginBottom={1}>
         <Text bold color="cyan">
-          项目管理
+          commit-log-daily · 项目管理
         </Text>
         <Text dimColor>
-          {' '}
-          | ↑↓ 导航 | A 添加 | D 删除 | S 保存 | Esc 返回
+          ↑↓ 选择  A 添加  D 删除  S 保存  Esc 返回
         </Text>
       </Box>
 
