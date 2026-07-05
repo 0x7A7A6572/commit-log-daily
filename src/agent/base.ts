@@ -1,3 +1,4 @@
+import type { BaseMessage } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
 import { readConfig } from '../config/store.js';
 import type { AgentPhase } from './types.js';
@@ -9,6 +10,7 @@ import { writeFileTool } from './tools/exportFile.js';
 import { generateReportTool } from './tools/generate.js';
 import { findGitReposTool } from './tools/findGitRepos.js';
 import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
+import { resolveTemplateForPrompt } from '../template/resolver.js';
 
 /** collect 阶段可用工具 */
 const COLLECT_TOOLS = [
@@ -27,11 +29,17 @@ const GENERATE_TOOLS = [
   writeFileTool,
 ];
 
+/** createModelForPhase 的返回值类型 */
+export interface PhaseModel {
+  invoke: (messages: BaseMessage[]) => Promise<BaseMessage>;
+  systemPrompt: string;
+}
+
 /**
- * 根据阶段创建对应的 ChatOpenAI 实例
+ * 根据阶段创建 ChatOpenAI 实例 + System Prompt
  * 每次调用重新读取配置，确保使用最新配置（含对话中修改）
  */
-export function createModelForPhase(phase: AgentPhase): ReturnType<ChatOpenAI['bindTools']> {
+export function createModelForPhase(phase: AgentPhase): PhaseModel {
   const config = readConfig();
 
   // 规范化 baseUrl：确保以 /v1 结尾（兼容用户漏写 /v1 的情况）
@@ -50,9 +58,37 @@ export function createModelForPhase(phase: AgentPhase): ReturnType<ChatOpenAI['b
   });
 
   const tools = phase === 'collect' ? COLLECT_TOOLS : GENERATE_TOOLS;
+  const runnable = model.bindTools(tools);
+  const systemPrompt = phase === 'collect' ? COLLECT_SYSTEM_PROMPT : buildGeneratePrompt();
 
-  // 绑定工具
-  return model.bindTools(tools);
+  return {
+    invoke: (messages: BaseMessage[]) => runnable.invoke(messages),
+    systemPrompt,
+  };
+}
+
+/**
+ * 构建 generate 阶段 System Prompt
+ * 优先使用用户自定义模板，否则使用内置 GENERATE_SYSTEM_PROMPT
+ */
+function buildGeneratePrompt(): string {
+  const resolved = resolveTemplateForPrompt();
+
+  if (!resolved) {
+    return GENERATE_SYSTEM_PROMPT;
+  }
+
+  const parts: string[] = [GENERATE_SYSTEM_PROMPT];
+
+  if (resolved.promptFragment) {
+    parts.push(resolved.promptFragment);
+  }
+
+  if (resolved.skeletonFragment) {
+    parts.push(resolved.skeletonFragment);
+  }
+
+  return parts.join('\n\n');
 }
 
 /** 将 Agent 原始响应中的 [PHASE:generate] 标记移除，返回清洗后的文本 */
