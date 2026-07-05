@@ -3,6 +3,7 @@ import path from 'node:path';
 import { CONFIG_DIR } from '../config/store.js';
 import type { SessionSummary, FullSession, StoredMessage } from './types.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
+import { createEmptyContext } from '../agent/types.js';
 
 /** 数据库文件路径 */
 const DB_PATH = path.join(CONFIG_DIR, 'sessions.db');
@@ -35,7 +36,7 @@ export function openDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS messages (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      role        TEXT NOT NULL,
+      role        TEXT NOT NULL,  -- 冗余字段，方便直接 SQL 查询时按 role 筛选，恢复时以 content JSON 内的 role 为准
       content     TEXT NOT NULL,
       created_at  TEXT NOT NULL,
       seq         INTEGER NOT NULL
@@ -73,17 +74,21 @@ export function saveMessage(
   const database = openDb();
   const now = new Date().toISOString();
 
-  database
-    .prepare(
-      `INSERT INTO messages (session_id, role, content, created_at, seq)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    .run(sessionId, role, content, now, seq);
+  // 事务包裹确保消息 INSERT 和会话 UPDATE 的原子性
+  const insertMsgAndTouchSession = database.transaction(() => {
+    database
+      .prepare(
+        `INSERT INTO messages (session_id, role, content, created_at, seq)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(sessionId, role, content, now, seq);
 
-  // 更新会话的 updated_at
-  database
-    .prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`)
-    .run(now, sessionId);
+    database
+      .prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`)
+      .run(now, sessionId);
+  });
+
+  insertMsgAndTouchSession();
 }
 
 /** 保存会话上下文和阶段 */
@@ -166,7 +171,7 @@ export function loadSession(sessionId: string): FullSession | null {
   try {
     context = JSON.parse(sessionRow.context) as SessionContext;
   } catch {
-    context = { dateRange: null, projects: [], commits: [], userSupplements: [] };
+    context = createEmptyContext();
   }
 
   const messageRows = database
