@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import React, { useState } from 'react';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 /** 聊天消息类型 */
@@ -8,70 +8,137 @@ export interface ChatMessage {
   content: string;
 }
 
+/** 斜杠命令定义 */
+interface SlashCommand {
+  name: string;
+  description: string;
+  action: string;
+}
+
+/** 可用命令列表 */
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: '/config', description: '打开配置页', action: 'config' },
+  { name: '/export', description: '导出报告到文件', action: 'export' },
+  { name: '/projects', description: '管理项目列表', action: 'projects' },
+  { name: '/history', description: '查看历史会话', action: 'history' },
+  { name: '/quit', description: '退出程序', action: 'quit' },
+];
+
+/** 菜单最多可见条数 */
+const MENU_VISIBLE_MAX = 5;
+
+/** 命令名列宽（最长的命令名 + 2 空格） */
+const CMD_NAME_WIDTH = Math.max(...SLASH_COMMANDS.map((c) => c.name.length)) + 2;
+
 interface ChatViewProps {
   /** 当前消息列表 */
   messages: ChatMessage[];
   /** 用户提交消息的回调 */
   onSubmit: (text: string) => void;
-  /** 是否正在等待 Agent 响应（显示加载指示） */
+  /** 是否正在等待 Agent 响应 */
   isWaiting: boolean;
+  /** 斜杠命令选中后的回调 */
+  onCommand: (action: string) => void;
 }
 
 /** 聊天界面视图 */
-export function ChatView({ messages, onSubmit, isWaiting }: ChatViewProps) {
-  const { stdout } = useStdout();
+export function ChatView({ messages, onSubmit, isWaiting, onCommand }: ChatViewProps) {
   const [input, setInput] = useState('');
-  const [termHeight, setTermHeight] = useState<number>(() => stdout?.rows ?? 24);
 
-  // 监听终端尺寸变化
-  useEffect(() => {
-    const onResize = () => setTermHeight(stdout?.rows ?? 24);
-    stdout?.on('resize', onResize);
-    return () => void stdout?.off('resize', onResize);
-  }, [stdout]);
+  // 斜杠菜单状态
+  const [showCommands, setShowCommands] = useState<boolean>(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
-  // 处理回车
+  // 根据当前输入过滤命令
+  const filteredCommands = SLASH_COMMANDS.filter((c) =>
+    c.name.startsWith(input) || c.name.includes(input),
+  );
+
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
-    if (!trimmed || isWaiting) return;
+    if (!trimmed) return;
+
+    // 如果菜单打开且有选中项，执行命令
+    if (showCommands && filteredCommands.length > 0) {
+      const cmd = filteredCommands[selectedIndex];
+      if (cmd) {
+        onCommand(cmd.action);
+        setInput('');
+        setShowCommands(false);
+        return;
+      }
+    }
+
+    if (isWaiting) return;
 
     onSubmit(trimmed);
     setInput('');
   };
 
+  const handleInputChange = (value: string) => {
+    setInput(value);
+
+    if (value.startsWith('/')) {
+      setShowCommands(true);
+      setSelectedIndex(0);
+    } else {
+      setShowCommands(false);
+    }
+  };
+
+  // 滚动跟随选中项
+  const visibleSlice = calcVisibleSlice(filteredCommands.length, selectedIndex, MENU_VISIBLE_MAX);
+
   useInput((_input, key) => {
     if (key.ctrl && (_input === 'c' || _input === 'd')) {
       process.exit(0);
     }
+
+    if (showCommands && filteredCommands.length > 0) {
+      if (key.upArrow) {
+        setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedIndex((prev) => (prev + 1) % filteredCommands.length);
+        return;
+      }
+      if (key.escape) {
+        setShowCommands(false);
+        setInput('');
+        return;
+      }
+      if (key.tab) {
+        setInput(filteredCommands[selectedIndex]!.name + ' ');
+        setShowCommands(false);
+        return;
+      }
+    }
+    // 菜单关闭时 ↑↓ 不做任何事，交给终端原生滚动
   });
 
-  // 标题栏 + 输入区占的行数
-  const HEADER_LINES = 1;
-  const INPUT_LINES = 2;
-  const maxMsgLines = Math.max(5, termHeight - HEADER_LINES - INPUT_LINES);
-
-  // 按可见行数截取最近消息
-  const visibleMessages = tailByLines(messages, maxMsgLines);
-
-  const messageElements: React.ReactElement[] = [];
-
-  for (const [i, msg] of visibleMessages.entries()) {
-    messageElements.push(React.createElement(MessageBubble, { key: String(i), message: msg }));
-  }
+  const displayedCommands = filteredCommands.slice(visibleSlice.start, visibleSlice.start + MENU_VISIBLE_MAX);
 
   return (
-    <Box flexDirection="column" height={termHeight}>
+    <Box flexDirection="column">
       {/* 标题栏 */}
       <Box paddingLeft={1} paddingRight={1}>
         <Text bold color="cyan">
           {'⚡'} commit-log-daily
         </Text>
-        <Text dimColor> agent mode | Ctrl+C 退出 | Ctrl+E 配置</Text>
+        <Text dimColor> agent mode | / 命令 | 滚轮翻看 | Ctrl+C 退出</Text>
       </Box>
 
-      {/* 消息区域 */}
-      <Box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1}>
-        {messageElements}
+      {/* 消息区域 - 渲染全部消息，溢出部分由终端原生 scrollback 处理 */}
+      <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
+        {messages.length === 0 && (
+          <Box paddingTop={1}>
+            <Text dimColor>发送消息开始对话…</Text>
+          </Box>
+        )}
+        {messages.map((msg, i) => (
+          <MessageBubble key={i} message={msg} />
+        ))}
         {isWaiting && (
           <Box>
             <Text color="yellow">...思考中</Text>
@@ -79,17 +146,50 @@ export function ChatView({ messages, onSubmit, isWaiting }: ChatViewProps) {
         )}
       </Box>
 
-      {/* 输入区域 */}
-      <Box paddingLeft={1} paddingRight={1}>
-        <Text color="green" bold>
-          {'❯'} {' '}
-        </Text>
-        <TextInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSubmit}
-          placeholder={isWaiting ? '等待 Agent 响应...' : '输入消息，回车发送...'}
-        />
+      {/* 底部区域：斜杠命令菜单 + 输入框 */}
+      <Box flexDirection="column" flexShrink={0} marginTop={0}>
+        {/* 斜杠命令菜单 */}
+        {showCommands && (
+          <Box flexDirection="column" marginLeft={1} marginRight={1} paddingLeft={1} paddingRight={1}>
+            <Box>
+              {filteredCommands.length > MENU_VISIBLE_MAX && (
+                <Text dimColor>
+                  ({selectedIndex + 1}/{filteredCommands.length})
+                </Text>
+              )}
+            </Box>
+            {displayedCommands.length === 0 && (
+              <Text dimColor>  无匹配命令</Text>
+            )}
+            {displayedCommands.map((cmd) => {
+              const realIndex = filteredCommands.indexOf(cmd);
+              const isSelected = realIndex === selectedIndex;
+              const pointer = isSelected ? '▸' : ' ';
+              const namePadded = cmd.name.padEnd(CMD_NAME_WIDTH);
+              return (
+                <Box key={cmd.name} gap={2}>
+                  <Text color={isSelected ? 'cyan' : undefined}>
+                    {pointer} {namePadded}
+                  </Text>
+                  <Text dimColor>{cmd.description}</Text>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+
+        {/* 输入框 - 始终固定在底部 */}
+        <Box paddingLeft={1} paddingRight={1}>
+          <Text color="green" bold>
+            {'❯'} {' '}
+          </Text>
+          <TextInput
+            value={input}
+            onChange={handleInputChange}
+            onSubmit={handleSubmit}
+            placeholder={isWaiting ? '等待 Agent 响应...' : showCommands ? '输入命令…' : '输入消息 (/ 打开命令)…'}
+          />
+        </Box>
       </Box>
     </Box>
   );
@@ -128,18 +228,21 @@ function MessageBubble({ message }: { message: ChatMessage }): React.ReactElemen
 }
 
 /**
- * 按可见行数截取最近消息
- * 每条消息约 content 行数 + 1 行角色标签
+ * 计算菜单可视切片
+ * 保持选中项在可视窗口内
  */
-function tailByLines(msgs: ChatMessage[], maxLines: number): ChatMessage[] {
-  const result: ChatMessage[] = [];
-  let used = 0;
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const msg = msgs[i]!;
-    const lines = msg.content.split('\n').length + 1;
-    if (used + lines > maxLines && result.length > 0) break;
-    result.unshift(msg);
-    used += lines;
+function calcVisibleSlice(
+  total: number,
+  selected: number,
+  max: number,
+): { start: number; count: number } {
+  if (total <= max) {
+    return { start: 0, count: total };
   }
-  return result;
+
+  let start = selected - Math.floor(max / 2);
+  if (start < 0) start = 0;
+  if (start + max > total) start = total - max;
+
+  return { start, count: max };
 }
