@@ -4,11 +4,12 @@ import { ChatView } from './ChatView.js';
 import { ConfigView } from './ConfigView.js';
 import { HistoryView } from './HistoryView.js';
 import { ProjectsView } from './ProjectsView.js';
+import { TemplatesView } from './TemplatesView.js';
 import { useSession } from './useSession.js';
 import type { FullSession } from '../session/types.js';
 
 /** 视图模式 */
-type ViewMode = 'chat' | 'config' | 'history' | 'projects';
+type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates';
 
 /** TUI 主应用组件 */
 function App() {
@@ -31,6 +32,9 @@ function App() {
           break;
         case 'projects':
           setView('projects');
+          break;
+        case 'templates':
+          setView('templates');
           break;
       }
     },
@@ -64,6 +68,10 @@ function App() {
 
   if (view === 'projects') {
     return <ProjectsView onBack={() => setView('chat')} />;
+  }
+
+  if (view === 'templates') {
+    return <TemplatesView onBack={() => setView('chat')} />;
   }
 
   return (

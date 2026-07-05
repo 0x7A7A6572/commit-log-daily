@@ -20,6 +20,7 @@ interface SlashCommand {
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/config", description: "打开配置页", action: "config" },
   { name: "/projects", description: "管理项目列表", action: "projects" },
+  { name: "/templates", description: "管理报告模板", action: "templates" },
   { name: "/history", description: "查看历史会话", action: "history" },
   { name: "/quit", description: "退出程序", action: "quit" },
 ];
