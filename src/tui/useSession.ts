@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import { createModelForPhase } from '../agent/base.js';
+import type { PhaseModel } from '../agent/base.js';
 import {
   createEmptyContext,
   evaluatePhaseTransition,
@@ -153,13 +154,18 @@ export function useSession(): SessionState {
         }
         saveMessage(currentSessionIdRef.current, 'human', serializeMessage(userMsg), userSeq);
 
-        const model = createModelForPhase(phase);
+        const phaseModel = createModelForPhase(phase);
         let msgSeq = userSeq + 1;
 
         // 工具调用循环：只要 LLM 还在发 tool_calls，就继续执行并再次调用
         const MAX_TOOL_ROUNDS = 10;
         let runningMessages: BaseMessage[] = [...updated];
-        let currentAiMsg: BaseMessage = await model.invoke(runningMessages);
+        // 注入 phase 对应的 System Prompt（过滤历史中的 system 消息）
+        const systemMessages: BaseMessage[] = [
+          new SystemMessage(phaseModel.systemPrompt),
+          ...runningMessages.filter((m) => m.getType() !== 'system'),
+        ];
+        let currentAiMsg: BaseMessage = await phaseModel.invoke(systemMessages);
         let toolRounds = 0;
 
         while (true) {
@@ -192,8 +198,12 @@ export function useSession(): SessionState {
           // 追加本轮 AI + Tool 消息到运行历史
           runningMessages = [...runningMessages, currentAiMsg, ...roundToolMessages];
 
-          // 再次调用 LLM，传入完整历史
-          currentAiMsg = await model.invoke(runningMessages);
+          // 注入 System Prompt 并再次调用 LLM
+          const loopSystemMessages: BaseMessage[] = [
+            new SystemMessage(phaseModel.systemPrompt),
+            ...runningMessages.filter((m) => m.getType() !== 'system'),
+          ];
+          currentAiMsg = await phaseModel.invoke(loopSystemMessages);
           toolRounds++;
         }
 
@@ -266,6 +276,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
   const { getConfigTool, setConfigTool } = await import('../agent/tools/config-tool.js');
   const { writeFileTool } = await import('../agent/tools/exportFile.js');
   const { generateReportTool } = await import('../agent/tools/generate.js');
+  const { listTemplatesTool, readTemplateTool, createTemplateTool, updateTemplateTool, deleteTemplateTool, setDefaultTemplateTool } = await import('../agent/tools/template-tool.js');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toolMap: Record<string, { invoke: (args: Record<string, unknown>) => Promise<string> }> = {
     scanGit: scanGitTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
@@ -276,6 +287,12 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
     setConfig: setConfigTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
     writeFile: writeFileTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
     generateReport: generateReportTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    listTemplates: listTemplatesTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    readTemplate: readTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    createTemplate: createTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    updateTemplate: updateTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    deleteTemplate: deleteTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
+    setDefaultTemplate: setDefaultTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
   };
 
   const tool = toolMap[name];
