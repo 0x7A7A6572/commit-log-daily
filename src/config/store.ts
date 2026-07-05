@@ -80,5 +80,5 @@ function setByPath(obj: Record<string, unknown>, pathStr: string, value: string)
   current[lastKey] = value;
 }
 
-/** 导出配置目录路径，供 exportFile 工具使用 */
+/** 导出配置目录路径，供 writeFile 工具使用 */
 export { CONFIG_DIR };

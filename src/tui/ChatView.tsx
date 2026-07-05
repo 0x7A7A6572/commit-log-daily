@@ -18,7 +18,6 @@ interface SlashCommand {
 /** 可用命令列表 */
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/config', description: '打开配置页', action: 'config' },
-  { name: '/export', description: '导出报告到文件', action: 'export' },
   { name: '/projects', description: '管理项目列表', action: 'projects' },
   { name: '/history', description: '查看历史会话', action: 'history' },
   { name: '/quit', description: '退出程序', action: 'quit' },
@@ -122,17 +121,23 @@ export function ChatView({ messages, onSubmit, isWaiting, onCommand }: ChatViewP
   return (
     <Box flexDirection="column">
       {/* 标题栏 */}
-      <Box paddingLeft={1} paddingRight={1}>
+      <Box
+        paddingLeft={1}
+        paddingRight={1}
+        borderStyle="single"
+        borderColor="cyan"
+      >
         <Text bold color="cyan">
-          {'⚡'} commit-log-daily
+          commit-log-daily
         </Text>
-        <Text dimColor> agent mode | / 命令 | 滚轮翻看 | Ctrl+C 退出</Text>
+        <Text dimColor> · Agent</Text>
+        <Text dimColor> · / 打开命令 · 滚轮翻看 · Ctrl+C 退出</Text>
       </Box>
 
-      {/* 消息区域 - 渲染全部消息，溢出部分由终端原生 scrollback 处理 */}
-      <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
+      {/* 消息区域 — 渲染全部消息，溢出部分由终端原生 scrollback 处理 */}
+      <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
         {messages.length === 0 && (
-          <Box paddingTop={1}>
+          <Box paddingLeft={2} paddingTop={1}>
             <Text dimColor>发送消息开始对话…</Text>
           </Box>
         )}
@@ -140,24 +145,30 @@ export function ChatView({ messages, onSubmit, isWaiting, onCommand }: ChatViewP
           <MessageBubble key={i} message={msg} />
         ))}
         {isWaiting && (
-          <Box>
-            <Text color="yellow">...思考中</Text>
+          <Box paddingLeft={2} paddingTop={1}>
+            <Text color="yellow">…思考中</Text>
           </Box>
         )}
       </Box>
 
-      {/* 底部区域：斜杠命令菜单 + 输入框 */}
+      {/* 底部区域：斜杠命令菜单 + 输入框，flexShrink=0 不被挤压 */}
       <Box flexDirection="column" flexShrink={0} marginTop={0}>
-        {/* 斜杠命令菜单 */}
+        {/* 斜杠命令菜单 — 紧贴输入框上方 */}
         {showCommands && (
-          <Box flexDirection="column" marginLeft={1} marginRight={1} paddingLeft={1} paddingRight={1}>
-            <Box>
-              {filteredCommands.length > MENU_VISIBLE_MAX && (
+          <Box
+            flexDirection="column"
+            marginLeft={1}
+            marginRight={1}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            {filteredCommands.length > MENU_VISIBLE_MAX && (
+              <Box>
                 <Text dimColor>
                   ({selectedIndex + 1}/{filteredCommands.length})
                 </Text>
-              )}
-            </Box>
+              </Box>
+            )}
             {displayedCommands.length === 0 && (
               <Text dimColor>  无匹配命令</Text>
             )}
@@ -178,16 +189,20 @@ export function ChatView({ messages, onSubmit, isWaiting, onCommand }: ChatViewP
           </Box>
         )}
 
-        {/* 输入框 - 始终固定在底部 */}
-        <Box paddingLeft={1} paddingRight={1}>
-          <Text color="green" bold>
-            {'❯'} {' '}
-          </Text>
+        {/* 输入框 */}
+        <Box
+          paddingLeft={1}
+          paddingRight={1}
+          borderStyle="round"
+          borderColor={showCommands ? 'cyan' : 'green'}
+          marginLeft={1}
+          marginRight={1}
+        >
           <TextInput
             value={input}
             onChange={handleInputChange}
             onSubmit={handleSubmit}
-            placeholder={isWaiting ? '等待 Agent 响应...' : showCommands ? '输入命令…' : '输入消息 (/ 打开命令)…'}
+            placeholder={isWaiting ? ' 等待 Agent 响应…' : showCommands ? ' 输入命令…' : ' 输入消息 (/ 打开命令)…'}
           />
         </Box>
       </Box>
@@ -195,34 +210,62 @@ export function ChatView({ messages, onSubmit, isWaiting, onCommand }: ChatViewP
   );
 }
 
-/** 单条消息气泡 */
+/** 单条消息气泡 — Claude 风格 */
 function MessageBubble({ message }: { message: ChatMessage }): React.ReactElement {
-  const colorMap: Record<string, string> = {
-    user: 'green',
-    assistant: 'blue',
-    system: 'yellow',
-  };
-  const labelMap: Record<string, string> = {
-    user: '▸ 你',
-    assistant: '✦ Agent',
-    system: '◆ 系统',
-  };
+  if (message.role === 'system') {
+    return (
+      <Box flexDirection="column" paddingLeft={2} paddingRight={2} marginTop={0}>
+        <Text dimColor>{message.content}</Text>
+      </Box>
+    );
+  }
 
-  const color = colorMap[message.role] ?? 'white';
-  const label = labelMap[message.role] ?? message.role;
+  if (message.role === 'user') {
+    return <UserBubble content={message.content} />;
+  }
 
-  const lines = message.content.split('\n');
+  return <AssistantBubble content={message.content} />;
+}
+
+/** 用户消息 — 右对齐，绿色边框 */
+function UserBubble({ content }: { content: string }): React.ReactElement {
+  const lines = content.split('\n');
 
   return (
-    <Box flexDirection="column" marginBottom={0}>
-      <Text color={color} bold>
-        {label}
-      </Text>
-      {lines.map((line, i) => (
-        <Text key={i} dimColor={message.role === 'system'}>
-          {line || ' '}
+    <Box flexDirection="row" justifyContent="flex-end" paddingLeft={4} paddingRight={1} marginTop={0}>
+      <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
+        <Text bold color="green">
+          You
         </Text>
-      ))}
+        {lines.map((line, i) => (
+          <Text key={i}>{line || ' '}</Text>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** 助手消息 — 左对齐，蓝色左边框 */
+function AssistantBubble({ content }: { content: string }): React.ReactElement {
+  const lines = content.split('\n');
+
+  return (
+    <Box flexDirection="column" paddingLeft={0} paddingRight={2} marginTop={0}>
+      <Box paddingLeft={2}>
+        <Text bold color="cyan">
+          Commit Log Daily
+        </Text>
+      </Box>
+      <Box flexDirection="row">
+        <Box paddingLeft={2} paddingRight={1}>
+          <Text color="cyan">{'│'}</Text>
+        </Box>
+        <Box flexDirection="column" flexGrow={1}>
+          {lines.map((line, i) => (
+            <Text key={i}>{line || ' '}</Text>
+          ))}
+        </Box>
+      </Box>
     </Box>
   );
 }

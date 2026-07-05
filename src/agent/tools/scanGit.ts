@@ -11,9 +11,6 @@ const execFileAsync = promisify(execFile);
 /** Git 只读子命令白名单 */
 const ALLOWED_COMMANDS: string[] = ['log', 'branch', 'diff', 'show', 'status'];
 
-/** 参数中禁止出现的危险模式 */
-const BLOCKED_PATTERNS: string[] = ['rm', 'push', 'reset', 'clean', '--hard', ';', '&&', '|', '>', '<'];
-
 /**
  * 安全执行本地 Git 命令
  * 使用 execFile + 数组传参，不经过 Shell，杜绝命令注入
@@ -34,18 +31,6 @@ async function safeGitExecute(projectPath: string, args: string[]): Promise<stri
       projectPath,
       args,
     );
-  }
-
-  for (const arg of args) {
-    for (const pattern of BLOCKED_PATTERNS) {
-      if (arg.toLowerCase().includes(pattern)) {
-        throw new GitExecutionError(
-          `参数包含危险模式 "${pattern}"，已拒绝执行`,
-          projectPath,
-          args,
-        );
-      }
-    }
   }
 
   const { stdout, stderr } = await execFileAsync('git', ['-C', projectPath, ...args]);

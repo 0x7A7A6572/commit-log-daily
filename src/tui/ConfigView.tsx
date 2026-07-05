@@ -155,16 +155,6 @@ export function ConfigView({ onClose }: ConfigViewProps) {
         onChangeEdit={setEditValue}
       />
 
-      {/* 项目列表（只读展示） */}
-      <SectionTitle title={`项目列表 (${config.projects.length})`} />
-      {config.projects.length === 0 ? (
-        <Text dimColor>  (无项目，请在对话中使用 addProject 添加)</Text>
-      ) : (
-        config.projects.map((p) => (
-          <Text key={p.name}>  {p.name} {'→'} {p.path}</Text>
-        ))
-      )}
-
       {/* 状态消息 */}
       {statusMsg ? (
         <Box marginTop={1}>

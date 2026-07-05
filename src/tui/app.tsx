@@ -3,11 +3,12 @@ import { render, useInput } from 'ink';
 import { ChatView } from './ChatView.js';
 import { ConfigView } from './ConfigView.js';
 import { HistoryView } from './HistoryView.js';
+import { ProjectsView } from './ProjectsView.js';
 import { useSession } from './useSession.js';
 import type { FullSession } from '../session/types.js';
 
 /** 视图模式 */
-type ViewMode = 'chat' | 'config' | 'history';
+type ViewMode = 'chat' | 'config' | 'history' | 'projects';
 
 /** TUI 主应用组件 */
 function App() {
@@ -34,11 +35,8 @@ function App() {
         case 'quit':
           process.exit(0);
           break;
-        case 'export':
-          handleSubmit('导出报告到文件');
-          break;
         case 'projects':
-          handleSubmit('查看当前项目列表');
+          setView('projects');
           break;
       }
     },
@@ -68,6 +66,10 @@ function App() {
 
   if (view === 'history') {
     return <HistoryView onRestore={handleRestore} onBack={handleHistoryBack} />;
+  }
+
+  if (view === 'projects') {
+    return <ProjectsView onBack={() => setView('chat')} />;
   }
 
   return (

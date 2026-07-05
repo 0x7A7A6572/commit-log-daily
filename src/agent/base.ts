@@ -5,8 +5,9 @@ import type { AgentPhase } from './types.js';
 import { scanGitTool } from './tools/scanGit.js';
 import { listProjectsTool, addProjectTool, removeProjectTool } from './tools/projects.js';
 import { getConfigTool, setConfigTool } from './tools/config-tool.js';
-import { exportFileTool } from './tools/exportFile.js';
+import { writeFileTool } from './tools/exportFile.js';
 import { generateReportTool } from './tools/generate.js';
+import { findGitReposTool } from './tools/findGitRepos.js';
 import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
 
 /** collect 阶段可用工具 */
@@ -17,12 +18,13 @@ const COLLECT_TOOLS = [
   removeProjectTool,
   getConfigTool,
   setConfigTool,
+  findGitReposTool,
 ];
 
 /** generate 阶段可用工具 */
 const GENERATE_TOOLS = [
   generateReportTool,
-  exportFileTool,
+  writeFileTool,
 ];
 
 /**
@@ -32,11 +34,17 @@ const GENERATE_TOOLS = [
 export function createModelForPhase(phase: AgentPhase): ReturnType<ChatOpenAI['bindTools']> {
   const config = readConfig();
 
+  // 规范化 baseUrl：确保以 /v1 结尾（兼容用户漏写 /v1 的情况）
+  let baseUrl = config.model.baseUrl;
+  if (!baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
+    baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
+  }
+
   const model = new ChatOpenAI({
     model: config.model.model,
     temperature: 0,
     configuration: {
-      baseURL: config.model.baseUrl,
+      baseURL: baseUrl,
       apiKey: config.model.apiKey,
     },
   });
