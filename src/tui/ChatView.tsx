@@ -193,7 +193,7 @@ export function ChatView({
             {displayedCommands.map((cmd) => {
               const realIndex = filteredCommands.indexOf(cmd);
               const isSelected = realIndex === selectedIndex;
-              const pointer = isSelected ? "▸" : " ";
+              const pointer = isSelected ? "❯" : " ";
               const namePadded = cmd.name.padEnd(CMD_NAME_WIDTH);
               return (
                 <Box key={cmd.name} gap={2}>

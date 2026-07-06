@@ -2,15 +2,15 @@ import { z } from 'zod';
 
 /** 大模型配置 schema */
 const modelSchema = z.object({
-  baseUrl: z.string().url('Base URL 必须是合法的 URL'),
-  model: z.string().min(1, '模型名不能为空'),
-  apiKey: z.string().min(1, 'API Key 不能为空'),
+  baseUrl: z.string().url('Base URL 必须是合法的 URL').or(z.literal('')),
+  model: z.string(),
+  apiKey: z.string(),
 });
 
 /** Git 作者配置 schema */
 const authorSchema = z.object({
-  name: z.string().min(1, '作者名不能为空'),
-  email: z.email('邮箱格式不正确'),
+  name: z.string(),
+  email: z.string().email('邮箱格式不正确').or(z.literal('')),
 });
 
 /** 单个项目配置 schema */

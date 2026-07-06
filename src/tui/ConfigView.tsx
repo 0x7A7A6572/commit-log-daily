@@ -1,20 +1,26 @@
-import { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
-import TextInput from 'ink-text-input';
-import { readConfig, writeConfig } from '../config/store.js';
-import type { AppConfig } from '../config/schema.js';
+import { useState } from "react";
+import { Box, Text, useInput } from "ink";
+import TextInput from "ink-text-input";
+import { readConfig, writeConfig } from "../config/store.js";
+import type { AppConfig } from "../config/schema.js";
 
 /** 配置页焦点区域 */
-type FocusArea = 'model-baseUrl' | 'model-model' | 'model-apiKey' | 'author-name' | 'author-email' | 'outputDir';
+type FocusArea =
+  | "model-baseUrl"
+  | "model-model"
+  | "model-apiKey"
+  | "author-name"
+  | "author-email"
+  | "outputDir";
 
 /** 所有焦点的顺序列表 */
 const FOCUS_ORDER: FocusArea[] = [
-  'model-baseUrl',
-  'model-model',
-  'model-apiKey',
-  'author-name',
-  'author-email',
-  'outputDir',
+  "model-baseUrl",
+  "model-model",
+  "model-apiKey",
+  "author-name",
+  "author-email",
+  "outputDir",
 ];
 
 interface ConfigViewProps {
@@ -30,8 +36,8 @@ export function ConfigView({ onClose }: ConfigViewProps) {
   const [config, setConfig] = useState<AppConfig>(() => readConfig());
   const [focusIndex, setFocusIndex] = useState<number>(0);
   const [editing, setEditing] = useState<boolean>(false);
-  const [editValue, setEditValue] = useState<string>('');
-  const [statusMsg, setStatusMsg] = useState<string>('');
+  const [editValue, setEditValue] = useState<string>("");
+  const [statusMsg, setStatusMsg] = useState<string>("");
 
   const currentFocus = FOCUS_ORDER[focusIndex]!;
 
@@ -39,9 +45,16 @@ export function ConfigView({ onClose }: ConfigViewProps) {
     // 编辑模式
     if (editing) {
       if (key.return) {
-        // 回车：保存编辑
-        setStatusMsg('');
-        applyEdit(config, currentFocus, editValue, setConfig, setStatusMsg);
+        // 回车：应用编辑并自动保存
+        const updated = applyEdit(config, currentFocus, editValue, setConfig);
+        try {
+          writeConfig(updated);
+          setStatusMsg("已保存");
+        } catch (err) {
+          setStatusMsg(
+            `保存失败: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         setEditing(false);
         return;
       }
@@ -49,17 +62,19 @@ export function ConfigView({ onClose }: ConfigViewProps) {
     }
 
     // 导航模式
-    if (input === 'e') {
+    if (input === "e") {
       // Enter 键进入编辑
       const currentValue = getFieldValue(config, currentFocus);
       setEditValue(currentValue);
       setEditing(true);
-      setStatusMsg('');
+      setStatusMsg("");
       return;
     }
 
     if (key.upArrow) {
-      setFocusIndex((prev) => (prev - 1 + FOCUS_ORDER.length) % FOCUS_ORDER.length);
+      setFocusIndex(
+        (prev) => (prev - 1 + FOCUS_ORDER.length) % FOCUS_ORDER.length,
+      );
       return;
     }
 
@@ -73,13 +88,15 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       return;
     }
 
-    if (input === 's') {
+    if (input === "s") {
       // Ctrl+S 保存
       try {
         writeConfig(config);
-        setStatusMsg('已保存');
+        setStatusMsg("已保存");
       } catch (err) {
-        setStatusMsg(`保存失败: ${err instanceof Error ? err.message : String(err)}`);
+        setStatusMsg(
+          `保存失败: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
       return;
     }
@@ -88,77 +105,78 @@ export function ConfigView({ onClose }: ConfigViewProps) {
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
       {/* 标题栏 */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="cyan">
-          commit-log-daily · 配置
-        </Text>
-        <Text dimColor>
-          ↑↓ 选择  E 编辑  Enter 确认  S 保存  Esc 返回
+      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
+        <Text bold color="black">
+          · commit-log-daily · 配置
         </Text>
       </Box>
+      <Text dimColor >↑↓ 选择 · E 编辑 · Enter 确认并保存 · Esc 返回</Text>
 
-      {/* 模型配置 */}
-      <SectionTitle title="大模型" />
-      <ConfigField
-        label="Base URL"
-        value={config.model.baseUrl}
-        focused={currentFocus === 'model-baseUrl'}
-        editing={editing && currentFocus === 'model-baseUrl'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-      />
-      <ConfigField
-        label="Model"
-        value={config.model.model}
-        focused={currentFocus === 'model-model'}
-        editing={editing && currentFocus === 'model-model'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-      />
-      <ConfigField
-        label="API Key"
-        value={maskForDisplay(config.model.apiKey)}
-        focused={currentFocus === 'model-apiKey'}
-        editing={editing && currentFocus === 'model-apiKey'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-        sensitive={true}
-      />
+      {/* 配置表单 */}
+      <Box flexDirection="column" padding={1}>
+        {/* 模型配置 */}
+        <SectionTitle title="大模型" />
+        <ConfigField
+          label="Base URL"
+          value={config.model.baseUrl}
+          focused={currentFocus === "model-baseUrl"}
+          editing={editing && currentFocus === "model-baseUrl"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+        />
+        <ConfigField
+          label="Model"
+          value={config.model.model}
+          focused={currentFocus === "model-model"}
+          editing={editing && currentFocus === "model-model"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+        />
+        <ConfigField
+          label="API Key"
+          value={maskForDisplay(config.model.apiKey)}
+          focused={currentFocus === "model-apiKey"}
+          editing={editing && currentFocus === "model-apiKey"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+          sensitive={true}
+        />
 
-      {/* 作者配置 */}
-      <SectionTitle title="Git 作者" />
-      <ConfigField
-        label="git user.name"
-        value={config.author.name || '(未配置)'}
-        focused={currentFocus === 'author-name'}
-        editing={editing && currentFocus === 'author-name'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-      />
-      <ConfigField
-        label="git user.email"
-        value={config.author.email || '(未配置)'}
-        focused={currentFocus === 'author-email'}
-        editing={editing && currentFocus === 'author-email'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-      />
+        {/* 作者配置 */}
+        <SectionTitle title="Git 作者" />
+        <ConfigField
+          label="git user.name"
+          value={config.author.name || "(未配置)"}
+          focused={currentFocus === "author-name"}
+          editing={editing && currentFocus === "author-name"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+        />
+        <ConfigField
+          label="git user.email"
+          value={config.author.email || "(未配置)"}
+          focused={currentFocus === "author-email"}
+          editing={editing && currentFocus === "author-email"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+        />
 
-      {/* 输出目录 */}
-      <SectionTitle title="报告输出" />
-      <ConfigField
-        label="输出目录"
-        value={config.report.outputDir || '(当前目录)'}
-        focused={currentFocus === 'outputDir'}
-        editing={editing && currentFocus === 'outputDir'}
-        editValue={editValue}
-        onChangeEdit={setEditValue}
-      />
+        {/* 输出目录 */}
+        <SectionTitle title="报告输出" />
+        <ConfigField
+          label="outputDir"
+          value={config.report.outputDir || "(当前目录)"}
+          focused={currentFocus === "outputDir"}
+          editing={editing && currentFocus === "outputDir"}
+          editValue={editValue}
+          onChangeEdit={setEditValue}
+        />
+      </Box>
 
       {/* 状态消息 */}
       {statusMsg ? (
         <Box marginTop={1}>
-          <Text color={statusMsg.startsWith('保存失败') ? 'red' : 'green'}>
+          <Text color={statusMsg.startsWith("保存失败") ? "red" : "green"}>
             {statusMsg}
           </Text>
         </Box>
@@ -170,8 +188,8 @@ export function ConfigView({ onClose }: ConfigViewProps) {
 /** 区块标题 */
 function SectionTitle({ title }: { title: string }) {
   return (
-    <Box marginTop={1}>
-      <Text bold underline>
+    <Box marginTop={1} marginLeft={1}>
+      <Text bold backgroundColor="grey" color="white">
         {title}
       </Text>
     </Box>
@@ -188,18 +206,20 @@ function ConfigField(props: {
   onChangeEdit: (v: string) => void;
   sensitive?: boolean;
 }) {
-  const pointer = props.focused ? '▸' : ' ';
-  const labelColor = props.focused ? 'cyan' : 'white';
-  const valueColor = props.focused ? undefined : 'grey';
+  const pointer = props.focused ? "❯" : " ";
+  const labelColor = props.focused ? "cyan" : "white";
+  const valueColor = props.focused ? undefined : "grey";
 
   if (props.editing) {
     return (
       <Box>
-        <Text color={labelColor}>{pointer} {props.label}: </Text>
+        <Text color={labelColor}>
+          {pointer} {props.label}:{" "}
+        </Text>
         <TextInput
           value={props.editValue}
           onChange={props.onChangeEdit}
-          placeholder={props.sensitive ? '输入 API Key...' : ''}
+          placeholder={props.sensitive ? "输入 API Key..." : ""}
         />
       </Box>
     );
@@ -207,7 +227,9 @@ function ConfigField(props: {
 
   return (
     <Box>
-      <Text color={labelColor}>{pointer} {props.label}: </Text>
+      <Text color={labelColor}>
+        {pointer} {props.label}:{" "}
+      </Text>
       <Text color={valueColor}>{props.value}</Text>
     </Box>
   );
@@ -218,53 +240,53 @@ function ConfigField(props: {
  */
 function getFieldValue(config: AppConfig, focus: FocusArea): string {
   const fieldMap: Record<FocusArea, string> = {
-    'model-baseUrl': config.model.baseUrl,
-    'model-model': config.model.model,
-    'model-apiKey': config.model.apiKey,
-    'author-name': config.author.name,
-    'author-email': config.author.email,
-    'outputDir': config.report.outputDir,
+    "model-baseUrl": config.model.baseUrl,
+    "model-model": config.model.model,
+    "model-apiKey": config.model.apiKey,
+    "author-name": config.author.name,
+    "author-email": config.author.email,
+    outputDir: config.report.outputDir,
   };
   return fieldMap[focus];
 }
 
 /**
- * 应用编辑到配置对象
+ * 应用编辑到配置对象，返回更新后的配置
  */
 function applyEdit(
   config: AppConfig,
   focus: FocusArea,
   value: string,
   setConfig: (c: AppConfig) => void,
-  setStatus: (m: string) => void,
-): void {
+): AppConfig {
   const updated = { ...config };
   switch (focus) {
-    case 'model-baseUrl':
+    case "model-baseUrl":
       updated.model = { ...updated.model, baseUrl: value };
       break;
-    case 'model-model':
+    case "model-model":
       updated.model = { ...updated.model, model: value };
       break;
-    case 'model-apiKey':
+    case "model-apiKey":
       updated.model = { ...updated.model, apiKey: value };
       break;
-    case 'author-name':
+    case "author-name":
       updated.author = { ...updated.author, name: value };
       break;
-    case 'author-email':
+    case "author-email":
       updated.author = { ...updated.author, email: value };
       break;
-    case 'outputDir':
+    case "outputDir":
       updated.report = { ...updated.report, outputDir: value };
       break;
   }
   setConfig(updated);
+  return updated;
 }
 
 /** 展示用脱敏 */
 function maskForDisplay(key: string): string {
-  if (!key) return '(未配置)';
-  if (key.length <= 6) return '****';
-  return `${key.slice(0, 3)}${'*'.repeat(key.length - 6)}${key.slice(-3)}`;
+  if (!key) return "(未配置)";
+  if (key.length <= 6) return "****";
+  return `${key.slice(0, 3)}${"*".repeat(key.length - 6)}${key.slice(-3)}`;
 }

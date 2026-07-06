@@ -7,6 +7,7 @@ import { agentGraph } from '../agent/graph.js';
 import type { ChatMessage } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
 import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
+import { readConfig } from '../config/store.js';
 import { WELCOME_MESSAGE } from './welcome.js';
 
 /** 会话 Hook 的返回值 */
@@ -150,6 +151,24 @@ export function useSession(): SessionState {
         }
         saveMessage(currentSessionIdRef.current, 'human', serializeMessage(userMsg), userSeq);
 
+        // 检查是否已配置 API Key
+        const config = readConfig();
+        if (!config.model.apiKey) {
+          setLangMessages((prev: BaseMessage[]) => [
+            ...prev,
+            new AIMessage(
+              '⚠️ 尚未配置 API Key，请先完成初始化配置。\n\n' +
+                '使用 /config 打开配置页面，填写以下信息：\n' +
+                '  • API Key — 你的大模型 API 密钥\n' +
+                '  • Base URL — API 端点地址\n' +
+                '  • Model — 模型名称\n\n' +
+                '也可以设置环境变量 AI_API_KEY、AI_BASE_URL、AI_MODEL。',
+            ),
+          ]);
+          setIsWaiting(false);
+          return;
+        }
+
         // 过滤系统消息（图内部自行注入 System Prompt）
         const conversationMessages = langMessages.filter((m: BaseMessage) => m.getType() !== 'system');
 
@@ -182,9 +201,19 @@ export function useSession(): SessionState {
         saveContext(currentSessionIdRef.current, newPhase, contextRef.current);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
+        const isCredentialError =
+          errMsg.includes('Missing credentials') ||
+          errMsg.includes('apiKey') ||
+          errMsg.includes('API_KEY');
+
+        const displayMsg = isCredentialError
+          ? '⚠️ API Key 未配置或无效。\n\n' +
+            '使用 /config 打开配置页面设置 API Key，或设置环境变量 AI_API_KEY。'
+          : `执行出错: ${errMsg}`;
+
         setLangMessages((prev: BaseMessage[]) => [
           ...prev,
-          new AIMessage(`执行出错: ${errMsg}`),
+          new AIMessage(displayMsg),
         ]);
       } finally {
         setIsWaiting(false);

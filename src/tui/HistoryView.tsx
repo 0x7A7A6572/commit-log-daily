@@ -98,7 +98,7 @@ export function HistoryView({ onRestore, onBack }: HistoryViewProps) {
         {sessions.map((session, index) => {
           const isSelected = index === selectedIndex;
           const dateStr = session.createdAt.slice(0, 10);
-          const pointer = isSelected ? '▸' : ' ';
+          const pointer = isSelected ? '❯' : ' ';
           const color = isSelected ? 'cyan' : undefined;
 
           return (

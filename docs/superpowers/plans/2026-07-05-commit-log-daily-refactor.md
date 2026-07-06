@@ -1147,7 +1147,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     system: 'yellow',
   };
   const labelMap: Record<string, string> = {
-    user: '▸ 你',
+    user: '❯ 你',
     assistant: '✦ Agent',
     system: '◆ 系统',
   };
@@ -1405,7 +1405,7 @@ function ConfigField(props: {
   onChangeEdit: (v: string) => void;
   sensitive?: boolean;
 }) {
-  const pointer = props.focused ? '▸' : ' ';
+  const pointer = props.focused ? '❯' : ' ';
   const color = props.focused ? 'cyan' : undefined;
 
   if (props.editing) {

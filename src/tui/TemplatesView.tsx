@@ -179,7 +179,7 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
       {mode === 'list' &&
         templates.map((t, i) => {
           const isFocused = i === focusIndex;
-          const pointer = isFocused ? '▸' : ' ';
+          const pointer = isFocused ? '❯' : ' ';
           const color = isFocused ? 'cyan' : undefined;
           const isBuiltin = t.filename === 'default';
 

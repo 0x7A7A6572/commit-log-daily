@@ -197,7 +197,7 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
 
       {projects.map((p, i) => {
         const isFocused = i === focusIndex;
-        const pointer = isFocused ? '▸' : ' ';
+        const pointer = isFocused ? '❯' : ' ';
         const color = isFocused ? 'cyan' : undefined;
 
         return (
