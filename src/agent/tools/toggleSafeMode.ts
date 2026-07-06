@@ -56,8 +56,9 @@ export const toggleSafeModeTool = tool(
   {
     name: 'toggleSafeMode',
     description:
-      '切换安全模式。安全模式开启时 Git 和系统命令受白名单限制（仅允许只读操作）。' +
-      '关闭后允许执行任意命令。此工具仅应在用户明确要求时调用，绝对不可自动调用。',
+      '⚠️ 切换安全模式。安全模式控制 Git 和系统命令的白名单限制。' +
+      '此工具绝对不能自动调用——仅当用户明确说出"关闭安全模式"、"开启安全模式"、"禁用安全模式"等指令时才可调用。' +
+      '调用前必须向用户确认风险。安全模式默认开启。',
     schema: z.object({
       enable: z.boolean().optional().describe(
         'true = 开启安全模式，false = 关闭安全模式。不传则切换当前状态。',
