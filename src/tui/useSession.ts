@@ -1,13 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
-import { createModelForPhase } from '../agent/base.js';
-import type { PhaseModel } from '../agent/base.js';
-import {
-  createEmptyContext,
-  evaluatePhaseTransition,
-} from '../agent/session.js';
+import { createEmptyContext } from '../agent/session.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
+import { agentGraph } from '../agent/graph.js';
 import type { ChatMessage } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
 import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
@@ -150,77 +146,40 @@ export function useSession(): SessionState {
           currentSessionIdRef.current = createSession(title);
           userSeq = 0;
         } else {
-          userSeq = langMessages.filter((m) => m.getType() !== 'system').length;
+          userSeq = langMessages.filter((m: BaseMessage) => m.getType() !== 'system').length;
         }
         saveMessage(currentSessionIdRef.current, 'human', serializeMessage(userMsg), userSeq);
 
-        const phaseModel = createModelForPhase(phase);
+        // 过滤系统消息（图内部自行注入 System Prompt）
+        const conversationMessages = langMessages.filter((m: BaseMessage) => m.getType() !== 'system');
+
+        // 运行 Agent 图（LangGraph 内部处理工具调用循环和阶段切换）
+        const result = await agentGraph.invoke({
+          messages: [...conversationMessages, userMsg],
+          phase: phase,
+        });
+
+        const resultMessages: BaseMessage[] = result.messages;
+        const newPhase: AgentPhase = result.phase;
+
+        // 图返回的 messages 包含所有历史 + 新消息，计算增量并持久化
+        const newMessages = resultMessages.slice(conversationMessages.length);
         let msgSeq = userSeq + 1;
-
-        // 工具调用循环：只要 LLM 还在发 tool_calls，就继续执行并再次调用
-        const MAX_TOOL_ROUNDS = 10;
-        let runningMessages: BaseMessage[] = [...updated];
-        // 注入 phase 对应的 System Prompt（过滤历史中的 system 消息）
-        const systemMessages: BaseMessage[] = [
-          new SystemMessage(phaseModel.systemPrompt),
-          ...runningMessages.filter((m) => m.getType() !== 'system'),
-        ];
-        let currentAiMsg: BaseMessage = await phaseModel.invoke(systemMessages);
-        let toolRounds = 0;
-
-        while (true) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const currentAny = currentAiMsg as unknown as {
-            content: string;
-            tool_calls?: Array<{ id: string; name: string; args: Record<string, unknown> }>;
-          };
-
-          // 无工具调用或达到最大轮数 → 退出循环
-          if (!currentAny.tool_calls || currentAny.tool_calls.length === 0 || toolRounds >= MAX_TOOL_ROUNDS) {
-            break;
+        for (const msg of newMessages) {
+          const msgType = msg.getType();
+          if (msgType === 'ai' || msgType === 'tool') {
+            const role = msgType === 'ai' ? 'ai' as const : 'tool' as const;
+            saveMessage(currentSessionIdRef.current, role, serializeMessage(msg), msgSeq++);
           }
-
-          // 立即显示当前 AI 响应，避免工具执行期间用户无反馈
-          setLangMessages([...runningMessages, currentAiMsg]);
-
-          // 保存 AI 消息（含 tool_calls）
-          saveMessage(currentSessionIdRef.current, 'ai', serializeMessage(currentAiMsg), msgSeq++);
-
-          // 执行本轮工具调用
-          const roundToolMessages: BaseMessage[] = [];
-          for (const tc of currentAny.tool_calls) {
-            const result = await executeTool(tc.name, tc.args);
-            const toolMsg = new ToolMessage({ content: result, tool_call_id: tc.id });
-            roundToolMessages.push(toolMsg);
-            saveMessage(currentSessionIdRef.current, 'tool', serializeMessage(toolMsg), msgSeq++);
-          }
-
-          // 追加本轮 AI + Tool 消息到运行历史
-          runningMessages = [...runningMessages, currentAiMsg, ...roundToolMessages];
-
-          // 注入 System Prompt 并再次调用 LLM
-          const loopSystemMessages: BaseMessage[] = [
-            new SystemMessage(phaseModel.systemPrompt),
-            ...runningMessages.filter((m) => m.getType() !== 'system'),
-          ];
-          currentAiMsg = await phaseModel.invoke(loopSystemMessages);
-          toolRounds++;
         }
 
-        // 保存最后一轮 AI 响应（纯文本或达到最大轮数）
-        saveMessage(currentSessionIdRef.current, 'ai', serializeMessage(currentAiMsg), msgSeq++);
-
-        const allMessages: BaseMessage[] = [...runningMessages, currentAiMsg];
-
-        setLangMessages(allMessages);
+        // 重新注入 WELCOME_MESSAGE 用于 UI 显示（图内部 System Prompt 不在结果中）
+        const displayMessages: BaseMessage[] = [new SystemMessage(WELCOME_MESSAGE), ...resultMessages];
+        setLangMessages(displayMessages);
+        setPhase(newPhase);
 
         // 保存上下文
-        saveContext(currentSessionIdRef.current, phase, contextRef.current);
-
-        // 检查阶段切换
-        const lastMsg = allMessages[allMessages.length - 1]!;
-        const content = typeof lastMsg.content === 'string' ? lastMsg.content : '';
-        handlePhaseCheck(content, phase, contextRef.current, setPhase);
+        saveContext(currentSessionIdRef.current, newPhase, contextRef.current);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         setLangMessages((prev: BaseMessage[]) => [
@@ -264,56 +223,4 @@ export function useSession(): SessionState {
     handleSubmit,
     loadHistorySession,
   };
-}
-
-/**
- * 执行单个工具调用
- */
-async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
-  // 动态导入工具模块（避免循环依赖）
-  const { scanGitTool } = await import('../agent/tools/scanGit.js');
-  const { listProjectsTool, addProjectTool, removeProjectTool } = await import('../agent/tools/projects.js');
-  const { getConfigTool, setConfigTool } = await import('../agent/tools/config-tool.js');
-  const { writeFileTool } = await import('../agent/tools/exportFile.js');
-  const { generateReportTool } = await import('../agent/tools/generate.js');
-  const { listTemplatesTool, readTemplateTool, createTemplateTool, updateTemplateTool, deleteTemplateTool, setDefaultTemplateTool } = await import('../agent/tools/template-tool.js');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toolMap: Record<string, { invoke: (args: Record<string, unknown>) => Promise<string> }> = {
-    scanGit: scanGitTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    listProjects: listProjectsTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    addProject: addProjectTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    removeProject: removeProjectTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    getConfig: getConfigTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    setConfig: setConfigTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    writeFile: writeFileTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    generateReport: generateReportTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    listTemplates: listTemplatesTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    readTemplate: readTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    createTemplate: createTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    updateTemplate: updateTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    deleteTemplate: deleteTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-    setDefaultTemplate: setDefaultTemplateTool as unknown as { invoke: (args: Record<string, unknown>) => Promise<string> },
-  };
-
-  const tool = toolMap[name];
-  if (!tool) {
-    return `未知工具: ${name}`;
-  }
-
-  return tool.invoke(args);
-}
-
-/**
- * 检查并处理阶段切换
- */
-function handlePhaseCheck(
-  content: string,
-  currentPhase: AgentPhase,
-  context: SessionContext,
-  setPhase: (p: AgentPhase) => void,
-): void {
-  const newPhase = evaluatePhaseTransition(currentPhase, content, context);
-  if (newPhase !== currentPhase) {
-    setPhase(newPhase);
-  }
 }

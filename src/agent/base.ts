@@ -7,13 +7,21 @@ import { scanGitTool } from './tools/scanGit.js';
 import { listProjectsTool, addProjectTool, removeProjectTool } from './tools/projects.js';
 import { getConfigTool, setConfigTool } from './tools/config-tool.js';
 import { writeFileTool } from './tools/exportFile.js';
-import { generateReportTool } from './tools/generate.js';
 import { findGitReposTool } from './tools/findGitRepos.js';
+import { execReadonlyTool } from './tools/execReadonly.js';
+import {
+  listTemplatesTool,
+  readTemplateTool,
+  createTemplateTool,
+  updateTemplateTool,
+  deleteTemplateTool,
+  setDefaultTemplateTool,
+} from './tools/template-tool.js';
 import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
 import { resolveTemplateForPrompt } from '../template/resolver.js';
 
 /** collect 阶段可用工具 */
-const COLLECT_TOOLS = [
+export const COLLECT_TOOLS = [
   scanGitTool,
   listProjectsTool,
   addProjectTool,
@@ -21,11 +29,17 @@ const COLLECT_TOOLS = [
   getConfigTool,
   setConfigTool,
   findGitReposTool,
+  execReadonlyTool,
+  listTemplatesTool,
+  readTemplateTool,
+  createTemplateTool,
+  updateTemplateTool,
+  deleteTemplateTool,
+  setDefaultTemplateTool,
 ];
 
 /** generate 阶段可用工具 */
-const GENERATE_TOOLS = [
-  generateReportTool,
+export const GENERATE_TOOLS = [
   writeFileTool,
 ];
 
