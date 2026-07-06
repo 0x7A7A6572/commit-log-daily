@@ -179,14 +179,15 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
       {/* 标题栏 */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="cyan">
-          commit-log-daily · 项目管理
-        </Text>
-        <Text dimColor>
-          ↑↓ 选择  A 添加  D 删除  S 保存  Esc 返回
+      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
+        <Text bold color="black">
+          · commit-log-daily · 项目管理
         </Text>
       </Box>
+      <Text dimColor>
+        ↑↓ 选择  A 添加  D 删除  S 保存  Esc 返回
+      </Text>
+
 
       {/* 项目列表 */}
       {projects.length === 0 && mode === 'list' && (
@@ -195,18 +196,9 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
         </Box>
       )}
 
-      {projects.map((p, i) => {
-        const isFocused = i === focusIndex;
-        const pointer = isFocused ? '❯' : ' ';
-        const color = isFocused ? 'cyan' : undefined;
-
-        return (
-          <Box key={p.name}>
-            <Text color={color}>{pointer} {p.name}</Text>
-            <Text dimColor>{' → '}{p.path}</Text>
-          </Box>
-        );
-      })}
+      {projects.length > 0 && (
+        <ProjectList projects={projects} focusIndex={focusIndex} />
+      )}
 
       {/* 删除确认 */}
       {mode === 'delete-confirm' && projects[focusIndex] && (
@@ -274,8 +266,36 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
 
       {/* 底部提示 */}
       <Box marginTop={1}>
-        <Text dimColor>A 添加 | D 删除 | Esc 返回</Text>
+        <Text dimColor></Text>
       </Box>
     </Box>
   );
+}
+
+/** 两列项目列表：名称 | 路径 */
+function ProjectList({
+  projects,
+  focusIndex,
+}: {
+  projects: ProjectConfig[];
+  focusIndex: number;
+}) {
+  const nameWidth = Math.max(...projects.map((p) => p.name.length), 4);
+  const rows = projects.map((p, i) => {
+    const isFocused = i === focusIndex;
+    const pointer = isFocused ? '❯' : ' ';
+    const color = isFocused ? 'cyan' : 'grey';
+    const namePadded = p.name.padEnd(nameWidth);
+
+    return (
+      <Box key={p.name}>
+        <Text color={isFocused ? 'cyan' : undefined}>
+          {pointer} {namePadded}
+        </Text>
+        <Text color={color}>{'  '}{p.path}</Text>
+      </Box>
+    );
+  });
+
+  return <Box flexDirection="column">{rows}</Box>;
 }

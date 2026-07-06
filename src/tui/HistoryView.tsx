@@ -80,12 +80,13 @@ export function HistoryView({ onRestore, onBack }: HistoryViewProps) {
   return (
     <Box flexDirection="column" height={24}>
       {/* 标题栏 */}
-      <Box paddingLeft={1} paddingRight={1}>
-        <Text bold color="cyan">
-          commit-log-daily
+      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
+        <Text bold color="black">
+          · commit-log-daily · 历史会话
         </Text>
-        <Text dimColor> · 历史会话 · q 返回</Text>
       </Box>
+      <Text dimColor> · q 返回</Text>
+
 
       {/* 列表区域 */}
       <Box flexDirection="column" flexGrow={1} paddingLeft={2} paddingRight={2} paddingTop={1}>

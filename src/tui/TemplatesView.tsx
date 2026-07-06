@@ -132,14 +132,15 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
   return (
     <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
       {/* 标题栏 */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="cyan">
-          commit-log-daily · 模板管理
-        </Text>
-        <Text dimColor>
-          ↑↓ 选择  V 预览  S 设为默认  D 删除  Esc 返回
+      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
+        <Text bold color="black">
+          · commit-log-daily · 模板管理
         </Text>
       </Box>
+      <Text dimColor>
+        ↑↓ 选择  V 预览  S 设为默认  D 删除  Esc 返回
+      </Text>
+
 
       {/* 预览模式 */}
       {mode === 'preview' && (
@@ -187,9 +188,13 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
             <Box key={t.filename}>
               <Text color={color}>
                 {pointer} {t.filename}
-                {t.isDefault ? ' ★' : ''}
-                {isBuiltin ? ' 🔒' : ''}
+                {t.isDefault ? ' [当前]' : ''}
               </Text>
+              {isBuiltin && (
+                  <Box marginLeft={1} paddingX={1} backgroundColor={'white'} >
+                    <Text color={'black'}>内置</Text>
+                  </Box>
+                )}
             </Box>
           );
         })}
@@ -212,7 +217,6 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
       {/* 底部提示 */}
       <Box marginTop={1}>
         <Text dimColor>
-          ★ 默认模板  🔒 内置只读  ·  ~/.commit-log-daily/templates/
         </Text>
       </Box>
     </Box>

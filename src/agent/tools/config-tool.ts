@@ -43,6 +43,8 @@ function formatConfigSummary(config: AppConfig): string {
 
   lines.push('');
   lines.push(`【输出目录】${config.report.outputDir || '当前目录'}`);
+  lines.push('');
+  lines.push(`【安全模式】${config.safety.safeMode ? '✅ 已开启（仅允许只读命令）' : '❌ 已关闭（允许所有命令）'}`);
 
   return lines.join('\n');
 }

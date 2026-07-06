@@ -4,6 +4,7 @@ import { readConfig } from '../config/store.js';
 import type { AgentPhase } from './types.js';
 
 import { scanGitTool } from './tools/scanGit.js';
+import { scanUncommittedTool } from './tools/scanUncommitted.js';
 import { listProjectsTool, addProjectTool, removeProjectTool } from './tools/projects.js';
 import { getConfigTool, setConfigTool } from './tools/config-tool.js';
 import { writeFileTool } from './tools/exportFile.js';
@@ -17,12 +18,14 @@ import {
   deleteTemplateTool,
   setDefaultTemplateTool,
 } from './tools/template-tool.js';
+import { toggleSafeModeTool } from './tools/toggleSafeMode.js';
 import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
 import { resolveTemplateForPrompt } from '../template/resolver.js';
 
 /** collect 阶段可用工具 */
 export const COLLECT_TOOLS = [
   scanGitTool,
+  scanUncommittedTool,
   listProjectsTool,
   addProjectTool,
   removeProjectTool,
@@ -36,6 +39,7 @@ export const COLLECT_TOOLS = [
   updateTemplateTool,
   deleteTemplateTool,
   setDefaultTemplateTool,
+  toggleSafeModeTool,
 ];
 
 /** generate 阶段可用工具 */

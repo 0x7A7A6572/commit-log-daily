@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { readConfig } from '../../config/store.js';
 
 const execAsync = promisify(exec);
 
@@ -48,20 +49,25 @@ const DANGEROUS_PATTERNS = [
  * - 参数在拼入命令字符串之前已经通过黑名单校验，安全性不降低
  */
 async function safeExec(command: string, args: string[]): Promise<string> {
-  // 第一层：命令白名单
-  if (!ALLOWED_COMMANDS.includes(command)) {
-    throw new Error(
-      `不允许执行 "${command}"，仅支持: ${ALLOWED_COMMANDS.join(', ')}`,
-    );
-  }
+  const config = readConfig();
 
-  // 第二层：参数黑名单（防止 shell 注入）
-  for (const arg of args) {
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(arg)) {
-        throw new Error(
-          `参数 "${arg.slice(0, 50)}" 包含不允许的字符: ${pattern}`,
-        );
+  // 安全模式开启时执行白名单和黑名单校验
+  if (config.safety.safeMode) {
+    // 第一层：命令白名单
+    if (!ALLOWED_COMMANDS.includes(command)) {
+      throw new Error(
+        `不允许执行 "${command}"，仅支持: ${ALLOWED_COMMANDS.join(', ')}`,
+      );
+    }
+
+    // 第二层：参数黑名单（防止 shell 注入）
+    for (const arg of args) {
+      for (const pattern of DANGEROUS_PATTERNS) {
+        if (pattern.test(arg)) {
+          throw new Error(
+            `参数 "${arg.slice(0, 50)}" 包含不允许的字符: ${pattern}`,
+          );
+        }
       }
     }
   }
@@ -102,8 +108,9 @@ function getBashPath(): string {
 /** 受控的只读系统命令执行工具 */
 export const execReadonlyTool = tool(
   async ({ command, args }) => {
-    // 二次校验：确保命令在白名单中（Zod refine 已做第一轮，此处为安全兜底）
-    if (!ALLOWED_COMMANDS.includes(command)) {
+    const config = readConfig();
+    // 安全模式开启时做二次校验（Zod refine 已做第一轮，此处为安全兜底）
+    if (config.safety.safeMode && !ALLOWED_COMMANDS.includes(command)) {
       throw new Error(`不允许执行 "${command}"`);
     }
     const result = await safeExec(command, args ?? []);

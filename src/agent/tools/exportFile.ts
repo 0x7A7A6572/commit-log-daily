@@ -17,9 +17,9 @@ function sanitizeFilename(name: string): string {
 
 /** 将内容写入磁盘保存为文件的工具 */
 export const writeFileTool = tool(
-  async ({ content, filename }) => {
+  async ({ content, filename, customOutput }) => {
     const config = readConfig();
-    const outputDir = config.report.outputDir || process.cwd();
+    const outputDir = customOutput || config.report.outputDir || process.cwd();
 
     // 确保输出目录存在（自动递归创建）
     fs.mkdirSync(outputDir, { recursive: true });
@@ -37,6 +37,7 @@ export const writeFileTool = tool(
     schema: z.object({
       content: z.string().describe('要写入的文件内容'),
       filename: z.string().optional().describe('文件名（不含扩展名），默认使用时间戳'),
+      customOutput: z.string().optional().describe('自定义输出目录，默认使用配置文件中的输出目录'),
     }),
   },
 );

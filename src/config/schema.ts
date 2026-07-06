@@ -25,12 +25,20 @@ const reportSchema = z.object({
   template: z.string().default('default'),
 });
 
+/** 安全配置 schema */
+const safetySchema = z.object({
+  /** 安全模式：开启时仅允许白名单 Git 子命令和系统命令，关闭时允许所有命令 */
+  safeMode: z.boolean().default(true),
+});
+
 /** 应用完整配置 schema */
 export const appConfigSchema = z.object({
   model: modelSchema,
   author: authorSchema,
   projects: z.array(projectSchema),
   report: reportSchema,
+  /** 安全配置 — 旧版配置文件可能没有此字段，缺失时默认开启安全模式 */
+  safety: safetySchema.default({ safeMode: true }),
 });
 
 /** 配置类型导出 */
@@ -48,6 +56,9 @@ export type AuthorConfig = z.infer<typeof authorSchema>;
 /** 报告配置类型 */
 export type ReportConfig = z.infer<typeof reportSchema>;
 
+/** 安全配置类型 */
+export type SafetyConfig = z.infer<typeof safetySchema>;
+
 /** 应用默认配置 */
 export const DEFAULT_CONFIG: AppConfig = {
   model: {
@@ -63,6 +74,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   report: {
     outputDir: '',
     template: 'default',
+  },
+  safety: {
+    safeMode: true,
   },
 };
 

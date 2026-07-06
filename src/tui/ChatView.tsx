@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { LoadingView } from "./components/Loading.js";
+import { readConfig } from "../config/store.js";
 
 /** 聊天消息类型 */
 export interface ChatMessage {
@@ -55,6 +56,17 @@ export function ChatView({
   // 斜杠菜单状态
   const [showCommands, setShowCommands] = useState<boolean>(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
+
+  // 读取安全模式状态
+  const config = readConfig();
+  const safeMode = config.safety.safeMode;
+
+  // 输入框边框颜色：安全模式关闭时用黄色警告
+  const inputBorderColor = safeMode
+    ? showCommands
+      ? "cyan"
+      : "green"
+    : "yellow";
 
   // 根据当前输入过滤命令
   const filteredCommands = SLASH_COMMANDS.filter(
@@ -212,7 +224,7 @@ export function ChatView({
           paddingLeft={1}
           paddingRight={1}
           borderStyle="round"
-          borderColor={showCommands ? "cyan" : "green"}
+          borderColor={inputBorderColor}
           marginLeft={1}
           marginRight={1}
         >
@@ -229,6 +241,13 @@ export function ChatView({
             }
           />
           <Text dimColor> · / 打开命令 · Ctrl+C 退出</Text>
+        </Box>
+
+        {/* 当前模式指示 */}
+        <Box paddingLeft={2} paddingRight={1} marginTop={0}>
+          <Text dimColor>
+            {safeMode ? "SAFE MODE" : "UNRESTRICTED MODE"}
+          </Text>
         </Box>
       </Box>
     </Box>

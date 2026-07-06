@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execSync } from 'node:child_process';
 import { appConfigSchema, DEFAULT_CONFIG, ENV_OVERRIDES } from './schema.js';
 import type { AppConfig } from './schema.js';
 
@@ -18,8 +19,28 @@ function ensureConfigDir(): void {
 }
 
 /**
+ * 从全局 git config 获取用户名和邮箱
+ * 作为 author 配置的自动检测 fallback
+ */
+function getGitUserConfig(): { name: string; email: string } {
+  const result = { name: '', email: '' };
+  try {
+    result.name = execSync('git config --global user.name', { encoding: 'utf-8' }).trim();
+  } catch {
+    // git 未安装或 user.name 未配置，静默跳过
+  }
+  try {
+    result.email = execSync('git config --global user.email', { encoding: 'utf-8' }).trim();
+  } catch {
+    // git 未安装或 user.email 未配置，静默跳过
+  }
+  return result;
+}
+
+/**
  * 读取配置文件
  * 三层 fallback：默认值 → config.json → 环境变量
+ * author 字段为空时自动从 git config 检测并持久化
  */
 export function readConfig(): AppConfig {
   ensureConfigDir();
@@ -46,6 +67,27 @@ export function readConfig(): AppConfig {
     const envValue = process.env[envKey];
     if (envValue) {
       setByPath(config, configPath, envValue);
+    }
+  }
+
+  // 如果 author 字段为空，自动从 git config 检测并持久化
+  if (!config.author.name || !config.author.email) {
+    const gitUser = getGitUserConfig();
+    let changed = false;
+    if (!config.author.name && gitUser.name) {
+      config.author.name = gitUser.name;
+      changed = true;
+    }
+    if (!config.author.email && gitUser.email) {
+      config.author.email = gitUser.email;
+      changed = true;
+    }
+    if (changed) {
+      try {
+        writeConfig(config);
+      } catch {
+        // 写入失败不影响读取结果
+      }
     }
   }
 
