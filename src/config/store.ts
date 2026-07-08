@@ -11,6 +11,9 @@ const CONFIG_DIR = path.join(os.homedir(), '.commit-log-daily');
 /** 配置文件路径 */
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
+/** readConfig 内存缓存：仅存储纯净磁盘配置（不含 env override 和 git-user fallback），writeConfig 时同步更新 */
+let _configCache: AppConfig | null = null;
+
 /** 确保配置目录存在 */
 function ensureConfigDir(): void {
   if (!fs.existsSync(CONFIG_DIR)) {
@@ -37,12 +40,46 @@ function getGitUserConfig(): { name: string; email: string } {
   return result;
 }
 
+/** 应用环境变量覆盖（每次 readConfig 均执行，确保运行时 env 变化即时生效） */
+function applyEnvOverrides(config: AppConfig): void {
+  for (const { envKey, configPath } of ENV_OVERRIDES) {
+    const envValue = process.env[envKey];
+    if (envValue) {
+      setByPath(config, configPath, envValue);
+    }
+  }
+}
+
+/** 仅内存中应用 git-user fallback，不修改缓存和磁盘（配置文件存在但 author 为空时） */
+function applyGitUserFallback(config: AppConfig): void {
+  if (!config.author.name || !config.author.email) {
+    const gitUser = getGitUserConfig();
+    if (!config.author.name && gitUser.name) {
+      config.author.name = gitUser.name;
+    }
+    if (!config.author.email && gitUser.email) {
+      config.author.email = gitUser.email;
+    }
+  }
+}
+
 /**
  * 读取配置文件
  * 三层 fallback：默认值 → config.json → 环境变量
- * author 字段为空时自动从 git config 检测并持久化
+ * 首次运行时自动从 git config 检测 author 并持久化
  */
 export function readConfig(): AppConfig {
+  // 缓存命中：从纯净磁盘配置克隆，重新应用运行时覆盖
+  if (_configCache) {
+    const config = structuredClone(_configCache);
+    applyEnvOverrides(config);
+    // 配置文件存在但 author 为空时，仅内存中应用 git fallback
+    if (fs.existsSync(CONFIG_PATH)) {
+      applyGitUserFallback(config);
+    }
+    return config;
+  }
+
   ensureConfigDir();
 
   // 从默认值开始
@@ -62,16 +99,14 @@ export function readConfig(): AppConfig {
     }
   }
 
-  // 环境变量覆盖（最高优先级）
-  for (const { envKey, configPath } of ENV_OVERRIDES) {
-    const envValue = process.env[envKey];
-    if (envValue) {
-      setByPath(config, configPath, envValue);
-    }
-  }
+  // 缓存纯净磁盘配置（不含 env override 和 git-user fallback）
+  _configCache = structuredClone(config);
 
-  // 如果 author 字段为空，自动从 git config 检测并持久化
-  if (!config.author.name || !config.author.email) {
+  // 环境变量覆盖（最高优先级，每次调用均生效）
+  applyEnvOverrides(config);
+
+  // 首次运行（无配置文件）时自动检测 git user 并持久化
+  if (!fs.existsSync(CONFIG_PATH)) {
     const gitUser = getGitUserConfig();
     let changed = false;
     if (!config.author.name && gitUser.name) {
@@ -89,6 +124,9 @@ export function readConfig(): AppConfig {
         // 写入失败不影响读取结果
       }
     }
+  } else {
+    // 配置文件已存在但 author 为空时，仅内存中使用 git config fallback
+    applyGitUserFallback(config);
   }
 
   return config;
@@ -96,12 +134,15 @@ export function readConfig(): AppConfig {
 
 /**
  * 写入配置文件
+ * 同步更新内存缓存为纯净磁盘版本（不包含 env override 和 git-user fallback）
  */
 export function writeConfig(config: AppConfig): void {
   ensureConfigDir();
   const validated = appConfigSchema.parse(config);
   const json = JSON.stringify(validated, null, 2);
   fs.writeFileSync(CONFIG_PATH, json, 'utf-8');
+  // 缓存不含运行时覆盖的纯净版本
+  _configCache = structuredClone(validated);
 }
 
 /**

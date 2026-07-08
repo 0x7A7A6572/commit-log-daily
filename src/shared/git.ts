@@ -85,8 +85,11 @@ export async function safeGitExecute(projectPath: string, args: string[]): Promi
 
   const { stdout, stderr } = await execFileAsync('git', ['-C', projectPath, ...args]);
 
-  if (stderr) {
-    return `Git 警告: ${stderr}\n输出: ${stdout}`;
+  // 命令成功执行时，stderr 可能包含 Git 诊断输出（如进度信息）
+  // 不应混入 stdout，避免下游解析器（如 parseGitLog）消费到非预期内容
+  if (stderr && !stdout) {
+    // stdout 为空但 stderr 有内容：某些 git 命令将结果写入 stderr
+    return stderr;
   }
   return stdout;
 }
@@ -109,7 +112,7 @@ export function parseGitLog(raw: string): Array<{
   if (!trimmed) return [];
 
   return trimmed.split('\n').map((line) => {
-    const parts = line.split('|');
+    const parts = line.split('|', 5);
     return {
       hash: (parts[0] ?? '').trim(),
       author: (parts[1] ?? '').trim(),

@@ -11,7 +11,8 @@ type FocusArea =
   | "model-apiKey"
   | "author-name"
   | "author-email"
-  | "outputDir";
+  | "outputDir"
+  | "safety-safeMode";
 
 /** 所有焦点的顺序列表 */
 const FOCUS_ORDER: FocusArea[] = [
@@ -21,6 +22,7 @@ const FOCUS_ORDER: FocusArea[] = [
   "author-name",
   "author-email",
   "outputDir",
+  "safety-safeMode",
 ];
 
 interface ConfigViewProps {
@@ -62,6 +64,21 @@ export function ConfigView({ onClose }: ConfigViewProps) {
     }
 
     // 导航模式
+    if (currentFocus === "safety-safeMode" && input === " ") {
+      // Space 切换安全模式
+      const updated = { ...config, safety: { ...config.safety, safeMode: !config.safety.safeMode } };
+      setConfig(updated);
+      try {
+        writeConfig(updated);
+        setStatusMsg("已保存");
+      } catch (err) {
+        setStatusMsg(
+          `保存失败: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+
     if (input === "e") {
       // Enter 键进入编辑
       const currentValue = getFieldValue(config, currentFocus);
@@ -110,7 +127,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           · commit-log-daily · 配置
         </Text>
       </Box>
-      <Text dimColor >↑↓ 选择 · E 编辑 · Enter 确认并保存 · Esc 返回</Text>
+      <Text dimColor >↑↓ 选择 · E 编辑 · Space 切换开关 · Enter 确认并保存 · Esc 返回</Text>
 
       {/* 配置表单 */}
       <Box flexDirection="column" padding={1}>
@@ -171,6 +188,24 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           editValue={editValue}
           onChangeEdit={setEditValue}
         />
+
+        {/* 安全配置 */}
+        <SectionTitle title="安全" />
+        <ConfigField
+          label="Safe Mode"
+          value={config.safety.safeMode ? "✅ 已开启（仅允许只读命令）" : "⚠️ 已关闭（允许所有命令）"}
+          focused={currentFocus === "safety-safeMode"}
+          editing={false}
+          editValue=""
+          onChangeEdit={() => {}}
+        />
+        <Box marginLeft={1}>
+          <Text dimColor>
+            {currentFocus === "safety-safeMode"
+              ? "按 Space 切换 · 开启后仅允许白名单 Git/系统命令"
+              : "安全模式控制 Git 和系统命令的白名单限制"}
+          </Text>
+        </Box>
       </Box>
 
       {/* 状态消息 */}
@@ -246,6 +281,7 @@ function getFieldValue(config: AppConfig, focus: FocusArea): string {
     "author-name": config.author.name,
     "author-email": config.author.email,
     outputDir: config.report.outputDir,
+    "safety-safeMode": config.safety.safeMode ? "true" : "false",
   };
   return fieldMap[focus];
 }
@@ -278,6 +314,9 @@ function applyEdit(
       break;
     case "outputDir":
       updated.report = { ...updated.report, outputDir: value };
+      break;
+    case "safety-safeMode":
+      updated.safety = { ...updated.safety, safeMode: value === "true" };
       break;
   }
   setConfig(updated);

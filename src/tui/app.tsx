@@ -14,7 +14,7 @@ type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates';
 /** TUI 主应用组件 */
 function App() {
   const [view, setView] = useState<ViewMode>('chat');
-  const { messages, isWaiting, handleSubmit, loadHistorySession } = useSession();
+  const { messages, isWaiting, tokenUsage, handleSubmit, loadHistorySession } = useSession();
 
 
   /** 处理斜杠命令 */
@@ -38,7 +38,7 @@ function App() {
           break;
       }
     },
-    [handleSubmit],
+    [],
   );
 
   const handleConfigClose = useCallback(() => {
@@ -77,6 +77,7 @@ function App() {
   return (
     <ChatView
       messages={messages}
+      tokenUsage={tokenUsage}
       onSubmit={handleSubmit}
       isWaiting={isWaiting}
       onCommand={handleCommand}

@@ -5,6 +5,8 @@ const modelSchema = z.object({
   baseUrl: z.string().url('Base URL 必须是合法的 URL').or(z.literal('')),
   model: z.string(),
   apiKey: z.string(),
+  /** 传给 LLM 的最大上下文 token 数，超过时自动裁剪旧消息 */
+  maxContextTokens: z.number().int().min(1000).max(200000).default(32000),
 });
 
 /** Git 作者配置 schema */
@@ -65,6 +67,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4.1-mini',
     apiKey: '',
+    maxContextTokens: 32000,
   },
   author: {
     name: '',

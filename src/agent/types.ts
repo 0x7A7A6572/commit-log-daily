@@ -21,6 +21,7 @@ export interface SessionContext {
   projects: { name: string; path: string }[];
   commits: GitScanResult[];
   userSupplements: string[];
+  tokenUsage: { input_tokens: number, output_tokens: number };
 }
 
 /** Agent 工作阶段 */
@@ -33,5 +34,6 @@ export function createEmptyContext(): SessionContext {
     projects: [],
     commits: [],
     userSupplements: [],
+    tokenUsage: { input_tokens: 0, output_tokens: 0 },
   };
 }

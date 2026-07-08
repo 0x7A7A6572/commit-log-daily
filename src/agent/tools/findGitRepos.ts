@@ -3,6 +3,9 @@ import path from 'node:path';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 
+/** 最多发现的仓库数，超出截断并标记 */
+const MAX_REPOS = 200;
+
 /** findGitRepos 返回的结果项 */
 interface FoundRepo {
   name: string;
@@ -66,7 +69,17 @@ export const findGitReposTool = tool(
       return `在 ${rootPath} 下未找到 Git 仓库`;
     }
 
-    return JSON.stringify(repos);
+    const truncated = repos.length > MAX_REPOS;
+    const visible = truncated ? repos.slice(0, MAX_REPOS) : repos;
+
+    return JSON.stringify({
+      repos: visible,
+      totalCount: visible.length,
+      truncated,
+      truncatedHint: truncated
+        ? `结果已截断：实际发现 ${repos.length} 个仓库，仅返回前 ${MAX_REPOS} 个。建议指定更具体的目录路径以获取完整列表。`
+        : undefined,
+    });
   },
   {
     name: 'findGitRepos',

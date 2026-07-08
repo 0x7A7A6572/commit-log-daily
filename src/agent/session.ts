@@ -13,6 +13,7 @@ export function applyContextUpdates(
     projects: updates.projects ?? context.projects,
     commits: updates.commits ?? context.commits,
     userSupplements: updates.userSupplements ?? context.userSupplements,
+    tokenUsage: updates.tokenUsage ?? context.tokenUsage,
   };
 }
 

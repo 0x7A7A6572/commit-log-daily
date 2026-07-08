@@ -1,8 +1,9 @@
 import { Annotation, messagesStateReducer, StateGraph, START, END } from '@langchain/langgraph';
 import { ToolNode, toolsCondition } from '@langchain/langgraph/prebuilt';
-import { SystemMessage, AIMessage } from '@langchain/core/messages';
+import { SystemMessage, AIMessage, trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import { createModelForPhase, COLLECT_TOOLS, GENERATE_TOOLS } from './base.js';
+import type { PhaseModel } from './base.js';
 
 /**
  * Agent 状态定义
@@ -21,6 +22,28 @@ const AgentStateAnnotation = Annotation.Root({
 });
 
 /**
+ * 构建裁剪后的消息列表：System Prompt 前置 + 历史对话 + trimMessages 裁剪
+ * collect 和 generate 节点共用此逻辑，避免裁剪策略变更时不同步
+ */
+async function buildTrimmedMessages(
+  state: typeof AgentStateAnnotation.State,
+  phaseModel: PhaseModel,
+): Promise<BaseMessage[]> {
+  const conversationMessages = state.messages.filter((m: BaseMessage) => m.getType() !== 'system');
+  const systemMessages: BaseMessage[] = [
+    new SystemMessage(phaseModel.systemPrompt),
+    ...conversationMessages,
+  ];
+  return trimMessages(systemMessages, {
+    maxTokens: phaseModel.maxContextTokens,
+    tokenCounter: phaseModel.model,
+    strategy: 'last',
+    startOn: 'human',
+    includeSystem: true,
+  });
+}
+
+/**
  * 收集阶段 LLM 节点
  * 每次调用重新创建模型实例，确保配置变更即时生效
  */
@@ -28,13 +51,8 @@ async function collectLLMNode(
   state: typeof AgentStateAnnotation.State,
 ): Promise<Partial<typeof AgentStateAnnotation.State>> {
   const phaseModel = createModelForPhase('collect');
-  // 过滤历史中的 system 消息，注入当前阶段的 System Prompt
-  const conversationMessages = state.messages.filter((m: BaseMessage) => m.getType() !== 'system');
-  const systemMessages: BaseMessage[] = [
-    new SystemMessage(phaseModel.systemPrompt),
-    ...conversationMessages,
-  ];
-  const response = await phaseModel.invoke(systemMessages);
+  const trimmed = await buildTrimmedMessages(state, phaseModel);
+  const response = await phaseModel.invoke(trimmed);
   return { messages: [response] };
 }
 
@@ -45,12 +63,8 @@ async function generateLLMNode(
   state: typeof AgentStateAnnotation.State,
 ): Promise<Partial<typeof AgentStateAnnotation.State>> {
   const phaseModel = createModelForPhase('generate');
-  const conversationMessages = state.messages.filter((m: BaseMessage) => m.getType() !== 'system');
-  const systemMessages: BaseMessage[] = [
-    new SystemMessage(phaseModel.systemPrompt),
-    ...conversationMessages,
-  ];
-  const response = await phaseModel.invoke(systemMessages);
+  const trimmed = await buildTrimmedMessages(state, phaseModel);
+  const response = await phaseModel.invoke(trimmed);
   return { messages: [response], phase: 'generate' as const };
 }
 

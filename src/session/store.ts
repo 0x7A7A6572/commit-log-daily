@@ -169,7 +169,9 @@ export function loadSession(sessionId: string): FullSession | null {
 
   let context: SessionContext;
   try {
-    context = JSON.parse(sessionRow.context) as SessionContext;
+    const parsed = JSON.parse(sessionRow.context) as Partial<SessionContext>;
+    // 合并默认值，确保新增字段（如 tokenUsage）有初始值
+    context = { ...createEmptyContext(), ...parsed };
   } catch {
     context = createEmptyContext();
   }
@@ -182,10 +184,16 @@ export function loadSession(sessionId: string): FullSession | null {
     )
     .all(sessionId) as Array<{ role: string; content: string }>;
 
-  const messages: StoredMessage[] = messageRows.map((row) => {
-    const parsed: StoredMessage = JSON.parse(row.content) as StoredMessage;
-    return { ...parsed, role: parsed.role || (row.role as StoredMessage['role']) };
-  });
+  const messages: StoredMessage[] = [];
+  for (const row of messageRows) {
+    try {
+      const parsed: StoredMessage = JSON.parse(row.content) as StoredMessage;
+      messages.push({ ...parsed, role: parsed.role || (row.role as StoredMessage['role']) });
+    } catch {
+      // 消息数据损坏时跳过，避免整个会话加载失败
+      continue;
+    }
+  }
 
   return {
     id: sessionRow.id,

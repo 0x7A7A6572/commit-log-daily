@@ -3,11 +3,31 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { LoadingView } from "./components/Loading.js";
 import { readConfig } from "../config/store.js";
+import type { SessionContext } from "../agent/types.js";
+import { tokenCountToUnit } from "../shared/utils.js";
+
+/** 单条工具调用展示信息 */
+export interface ToolCallDisplay {
+  id: string;
+  name: string;
+  /** 工具调用参数 */
+  args: Record<string, unknown>;
+  /** 工具执行结果（来自 ToolMessage） */
+  result?: string;
+  /** 工具执行状态 */
+  status?: "success" | "error";
+}
 
 /** 聊天消息类型 */
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  /** 思考过程（DeepSeek: additional_kwargs.reasoning_content，通用: reasoning content block） */
+  reasoning?: string;
+  /** 本次消息携带的工具调用 */
+  toolCalls?: ToolCallDisplay[];
+  /** 本次消息的 token 消耗 */
+  tokenUsage?: { input_tokens: number; output_tokens: number };
 }
 
 /** 斜杠命令定义 */
@@ -36,6 +56,8 @@ const CMD_NAME_WIDTH =
 interface ChatViewProps {
   /** 当前消息列表 */
   messages: ChatMessage[];
+  /** 当前会话累计 token 消耗 */
+  tokenUsage: SessionContext['tokenUsage'];
   /** 用户提交消息的回调 */
   onSubmit: (text: string) => void;
   /** 是否正在等待 Agent 响应 */
@@ -47,6 +69,7 @@ interface ChatViewProps {
 /** 聊天界面视图 */
 export function ChatView({
   messages,
+  tokenUsage,
   onSubmit,
   isWaiting,
   onCommand,
@@ -243,10 +266,14 @@ export function ChatView({
           <Text dimColor> · / 打开命令 · Ctrl+C 退出</Text>
         </Box>
 
-        {/* 当前模式指示 */}
-        <Box paddingLeft={2} paddingRight={1} marginTop={0}>
+        {/* 当前模式和 token 消耗 */}
+        <Box paddingLeft={2} paddingRight={1} marginTop={0} gap={2}>
           <Text dimColor>
             {safeMode ? "SAFE MODE" : "UNRESTRICTED MODE"}
+          </Text>
+          <Text dimColor>|</Text>
+          <Text dimColor>
+            Tokens: in {tokenCountToUnit(tokenUsage?.input_tokens ?? 0)} / out {tokenCountToUnit(tokenUsage?.output_tokens ?? 0)}
           </Text>
         </Box>
       </Box>
@@ -277,7 +304,7 @@ function MessageBubble({
     return <UserBubble content={message.content} />;
   }
 
-  return <AssistantBubble content={message.content} />;
+  return <AssistantBubble message={message} />;
 }
 
 /** 用户消息 — 右对齐，绿色边框 */
@@ -304,29 +331,116 @@ function UserBubble({ content }: { content: string }): React.ReactElement {
   );
 }
 
-/** 助手消息 — 左对齐，蓝色左边框 */
-function AssistantBubble({ content }: { content: string }): React.ReactElement {
+/** 助手消息 — 左对齐，蓝色左边框，展示思考过程 + 工具调用 + 文本 + token */
+function AssistantBubble({
+  message,
+}: {
+  message: ChatMessage;
+}): React.ReactElement {
+  const { content, reasoning, toolCalls, tokenUsage } = message;
   const lines = content.split("\n");
+  const hasContent = content.trim().length > 0;
+  const hasReasoning = !!reasoning;
+  const hasToolCalls = toolCalls && toolCalls.length > 0;
+  const hasFooter = !!tokenUsage;
 
   return (
     <Box flexDirection="column" paddingLeft={0} paddingRight={2} marginTop={2}>
+      {/* 标题行 */}
       <Box paddingLeft={2}>
         <Text color="cyan">{"│"}</Text>
         <Box paddingLeft={1} paddingRight={1}>
           <Text bold color="cyan">Bot ⌘</Text>
         </Box>
       </Box>
+
+      {/* 消息体：所有内容共享一条 │ 左边框 */}
       <Box flexDirection="row">
         <Box paddingLeft={2} paddingRight={1}>
           <Text color="cyan">{"│"}</Text>
         </Box>
         <Box flexDirection="column" flexGrow={1}>
-          {lines.map((line, i) => (
-            <Text key={i}>{line || " "}</Text>
-          ))}
+          {/* 思考过程 */}
+          {hasReasoning && (
+            <Box flexDirection="column" marginBottom={hasToolCalls || hasContent ? 1 : 0}>
+              <Text color="yellow" dimColor>
+                🧠 思考过程：
+              </Text>
+              <Text dimColor>{truncateReasoning(reasoning!)}</Text>
+            </Box>
+          )}
+
+          {/* 工具调用 */}
+          {hasToolCalls &&
+            toolCalls!.map((tc, idx) => (
+              <Box
+                key={tc.id}
+                flexDirection="column"
+                marginBottom={
+                  idx < toolCalls!.length - 1 || hasContent ? 1 : 0
+                }
+              >
+                <Text color="cyan">🔧 {tc.name}</Text>
+                <Text dimColor>   📥 {formatArgs(tc.args)}</Text>
+                {tc.result !== undefined && (
+                  <Text
+                    color={tc.status === "error" ? "red" : undefined}
+                    dimColor={tc.status !== "error"}
+                  >
+                    {"   "}
+                    {tc.status === "error" ? "❌" : "📤"}{" "}
+                    {truncateResult(tc.result)}
+                  </Text>
+                )}
+              </Box>
+            ))}
+
+          {/* 文本回复 */}
+          {hasContent &&
+            lines.map((line, i) => (
+              <Text key={i}>{line || " "}</Text>
+            ))}
+
+          {/* token 消耗脚注 */}
+          {hasFooter && (
+            <Box marginTop={hasContent || hasToolCalls ? 1 : 0}>
+              <Text dimColor>
+                ── tokens: in {tokenCountToUnit(tokenUsage!.input_tokens)}{" "}
+                / out {tokenCountToUnit(tokenUsage!.output_tokens)}
+              </Text>
+            </Box>
+          )}
         </Box>
       </Box>
     </Box>
+  );
+}
+
+/** 截断过长的思考过程（默认 300 字） */
+function truncateReasoning(text: string, maxLen = 300): string {
+  if (text.length <= maxLen) return text;
+  return (
+    text.slice(0, maxLen) + `...（共 ${text.length} 字，已截断）`
+  );
+}
+
+/** 格式化工具调用参数为紧凑单行 */
+function formatArgs(args: Record<string, unknown>): string {
+  const entries = Object.entries(args);
+  if (entries.length === 0) return "（无参数）";
+  return entries
+    .map(([k, v]) => {
+      const val = typeof v === "string" ? `"${v}"` : JSON.stringify(v);
+      return `${k}: ${val}`;
+    })
+    .join(", ");
+}
+
+/** 截断过长的工具执行结果（默认 500 字） */
+function truncateResult(result: string, maxLen = 500): string {
+  if (result.length <= maxLen) return result;
+  return (
+    result.slice(0, maxLen) + `...（共 ${result.length} 字，已截断）`
   );
 }
 

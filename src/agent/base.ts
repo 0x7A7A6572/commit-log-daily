@@ -18,9 +18,9 @@ import {
   deleteTemplateTool,
   setDefaultTemplateTool,
 } from './tools/template-tool.js';
-import { toggleSafeModeTool } from './tools/toggleSafeMode.js';
 import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
 import { resolveTemplateForPrompt } from '../template/resolver.js';
+import { generateReportTool } from './tools/generate.js';
 
 /** collect 阶段可用工具 */
 export const COLLECT_TOOLS = [
@@ -39,18 +39,22 @@ export const COLLECT_TOOLS = [
   updateTemplateTool,
   deleteTemplateTool,
   setDefaultTemplateTool,
-  toggleSafeModeTool,
 ];
 
 /** generate 阶段可用工具 */
 export const GENERATE_TOOLS = [
   writeFileTool,
+  generateReportTool,
 ];
 
 /** createModelForPhase 的返回值类型 */
 export interface PhaseModel {
   invoke: (messages: BaseMessage[]) => Promise<BaseMessage>;
   systemPrompt: string;
+  /** ChatOpenAI 实例，供 trimMessages 做 token 计数 */
+  model: ChatOpenAI;
+  /** 配置中的最大上下文 token 数 */
+  maxContextTokens: number;
 }
 
 /**
@@ -61,8 +65,8 @@ export function createModelForPhase(phase: AgentPhase): PhaseModel {
   const config = readConfig();
 
   // 规范化 baseUrl：确保以 /v1 结尾（兼容用户漏写 /v1 的情况）
-  let baseUrl = config.model.baseUrl;
-  if (!baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
+  let baseUrl = config.model.baseUrl.trim();
+  if (baseUrl && !baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
     baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
   }
 
@@ -82,6 +86,8 @@ export function createModelForPhase(phase: AgentPhase): PhaseModel {
   return {
     invoke: (messages: BaseMessage[]) => runnable.invoke(messages),
     systemPrompt,
+    model,
+    maxContextTokens: config.model.maxContextTokens,
   };
 }
 
@@ -117,4 +123,14 @@ export function stripPhaseMarker(content: string): string {
 /** 检测 Agent 响应中是否包含阶段切换标记 */
 export function hasPhaseMarker(content: string): boolean {
   return content.includes('[PHASE:generate]');
+}
+
+/** 检测 Agent 响应中是否包含任务完成标记 */
+export function hasTaskCompleteMarker(content: string): boolean {
+  return content.includes('[TASK_COMPLETE]');
+}
+
+/** 将 Agent 原始响应中的 [TASK_COMPLETE] 标记移除，返回清洗后的文本 */
+export function stripTaskCompleteMarker(content: string): string {
+  return content.replace(new RegExp(`\\n?\\[TASK_COMPLETE\\]\\s*$`, 'gm'), '').trim();
 }

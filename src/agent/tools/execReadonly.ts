@@ -1,11 +1,8 @@
-import { exec } from 'node:child_process';
+import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { promisify } from 'node:util';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { readConfig } from '../../config/store.js';
-
-const execAsync = promisify(exec);
 
 /** 只读系统命令白名单 */
 const ALLOWED_COMMANDS: string[] = [
@@ -26,66 +23,61 @@ const ALLOWED_COMMANDS: string[] = [
   'printenv',  // 打印环境变量
 ];
 
-/** 参数中禁止出现的危险字符 */
-const DANGEROUS_PATTERNS = [
-  /\|/,        // 管道
-  /;/,         // 命令分隔
-  />/,         // 输出重定向
-  /</,         // 输入重定向
-  /\$\(/,      // 命令替换
-  /`/,         // 命令替换
-  /&&/,        // 逻辑与
-  /\|\|/,       // 逻辑或
-  /&/,         // 后台运行
-];
-
 /**
  * 安全执行系统命令
- * 三层防护：命令白名单 + 参数黑名单 + 通过 bash -c 执行
- *
- * 使用 bash -c 而非 execFile 直接 spawn：
- * - date/ls/cat 等是 Git Bash 提供的命令，在 Windows 上不是独立 .exe
- * - bash -c 确保这些命令在 Git Bash 环境中可靠可用
- * - 参数在拼入命令字符串之前已经通过黑名单校验，安全性不降低
+ * 使用 spawn + bash -c "$@" 保持参数边界：
+ * - 参数以数组原样传给 bash，不经过 shell 字符串拼接 + 二次解析
+ * - 含空格、$、* 等特殊字符的参数不会被错误拆分或展开
  */
 async function safeExec(command: string, args: string[]): Promise<string> {
   const config = readConfig();
 
-  // 安全模式开启时执行白名单和黑名单校验
+  // 安全模式开启时校验命令白名单
   if (config.safety.safeMode) {
-    // 第一层：命令白名单
     if (!ALLOWED_COMMANDS.includes(command)) {
       throw new Error(
         `不允许执行 "${command}"，仅支持: ${ALLOWED_COMMANDS.join(', ')}`,
       );
     }
+  }
 
-    // 第二层：参数黑名单（防止 shell 注入）
-    for (const arg of args) {
-      for (const pattern of DANGEROUS_PATTERNS) {
-        if (pattern.test(arg)) {
-          throw new Error(
-            `参数 "${arg.slice(0, 50)}" 包含不允许的字符: ${pattern}`,
-          );
-        }
+  const bashPath = getBashPath();
+
+  return new Promise((resolve, reject) => {
+    // bash -c 'command "$@"' command arg1 arg2 ...
+    // "$@" 保持每个参数的边界，无论是否含空格/特殊字符
+    const child: ChildProcessWithoutNullStreams = spawn(bashPath, ['-c', `${command} "$@"`, command, ...args], {
+      timeout: 10_000,       // 10 秒超时
+      // encoding: 'utf-8',
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`命令执行失败 (exit ${code}): ${stderr || stdout || '(无输出)'}`));
+        return;
       }
-    }
-  }
+      // 部分命令将结果写入 stderr（如某些平台上 date --help 有时输出到 stderr）
+      if (stderr && !stdout) {
+        resolve(stderr);
+      } else {
+        resolve(stdout);
+      }
+    });
 
-  // 拼装命令字符串，交给 bash -c 执行
-  const cmdString = [command, ...args].join(' ');
-
-  const { stdout, stderr } = await execAsync(cmdString, {
-    timeout: 10_000,               // 10 秒超时
-    maxBuffer: 1024 * 1024,        // 1MB 输出上限
-    encoding: 'utf-8',
-    shell: getBashPath(),          // 自动检测 Git Bash 路径
+    child.on('error', (err) => {
+      reject(new Error(`无法启动命令 "${command}": ${err.message}`));
+    });
   });
-
-  if (stderr) {
-    return `stderr: ${stderr}\nstdout:\n${stdout}`;
-  }
-  return stdout;
 }
 
 /** 自动检测 Git Bash 可执行文件路径，支持 Windows / macOS / Linux */

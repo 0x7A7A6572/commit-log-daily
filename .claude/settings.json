@@ -1,8 +1,21 @@
 {
+  "permissions": {
+    "defaultMode": "auto"
+  },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true
   },
-  "permissions": {
-    "defaultMode": "auto"
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "(我去洗澡|我去吃饭|我离开一会|我先去忙了|我出门了|我先走了|我去干点别的|暂时离开)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[LEAVE-USER] 用户已离开。推进主任务不中断，调用 leave-user skill 加载后台陪护规则。用户下一条消息即视为归来信号。\""
+          }
+        ]
+      }
+    ]
   }
 }

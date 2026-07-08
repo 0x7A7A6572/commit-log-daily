@@ -65,6 +65,11 @@ export const getConfigTool = tool(
 /** 更新配置的工具 */
 export const setConfigTool = tool(
   async ({ section, key, value }) => {
+    // 安全防护：禁止通过对话修改敏感字段，防止 LLM 被诱导泄露 API Key
+    if (section === 'model' && (key === 'baseUrl' || key === 'apiKey')) {
+      return `⚠️ 出于安全原因，不允许通过对话修改 ${key}。请使用 /config 命令在配置页面中手动修改。`;
+    }
+
     const config = readConfig();
 
     // 按 section 定位配置块，更新指定 key
