@@ -76,7 +76,7 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
     }
 
     if (trimmed === 'default') {
-      setStatusMsg('"default" 是内置模板名，请使用其他名称');
+      setStatusMsg('"default" 是内置模板名，不能使用此名称');
       setMode('list');
       return;
     }
