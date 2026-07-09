@@ -21,6 +21,9 @@ function templatePath(name: string): string {
   return path.join(TEMPLATE_DIR, `${name}.md`);
 }
 
+/** 获取模板文件的完整路径 */
+export const getTemplatePath = templatePath;
+
 /** 列出所有模板文件 */
 export function listTemplates(): Array<{ filename: string; isDefault: boolean }> {
   ensureDir();
@@ -123,6 +126,47 @@ export function setDefaultTemplate(name: string): void {
   const config = readConfig();
   config.report.template = name;
   writeConfig(config);
+}
+
+/** 新建模板文件时写入的预制内容 */
+const NEW_TEMPLATE_CONTENT = `<!-- 以上部分写 Prompt 指令，告诉 LLM 怎么写（风格、人称、约束等） -->
+
+<!-- DATA -->
+
+<!-- 以下部分写 Markdown 骨架，LLM 以此结构生成报告 -->
+<!-- 可用占位符：{{reportType}} {{dateRange}} {{author.name}}
+     循环：{{#projects}} {{projectName}} {{commitCount}} {{#commits}} {{message}} {{/commits}} {{/projects}} -->
+
+# {{author.name}} 的{{reportType}}
+
+**时间范围**：{{dateRange}}
+
+## 核心产出
+{{#projects}}
+### {{projectName}}（{{commitCount}} 次提交）
+{{#commits}}
+- {{message}}
+{{/commits}}
+{{/projects}}
+
+## 下一步计划
+<!-- LLM 根据上下文推断 -->
+`;
+
+/** 创建带预制格式的空白模板文件 */
+export function createEmptyTemplate(name: string): void {
+  if (name === BUILTIN_TEMPLATE) {
+    throw new Error(`"${BUILTIN_TEMPLATE}" 是内置模板，不可创建`);
+  }
+
+  ensureDir();
+  const filePath = templatePath(name);
+
+  if (fs.existsSync(filePath)) {
+    throw new Error(`模板 "${name}" 已存在，请按 E 编辑`);
+  }
+
+  fs.writeFileSync(filePath, NEW_TEMPLATE_CONTENT, 'utf-8');
 }
 
 /** 导出模板目录路径，供 resolver 使用 */
