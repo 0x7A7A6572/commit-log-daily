@@ -41,6 +41,7 @@ cld-agent
 | `/config` | 配置大模型 API、Git 作者、输出目录 |
 | `/projects` | 管理项目列表（添加/删除 Git 仓库） |
 | `/history` | 查看和恢复历史会话 |
+| `/templates` | 管理报告模板（创建/编辑/删除） |
 | `/quit` | 退出 |
 
 ## AI 配置

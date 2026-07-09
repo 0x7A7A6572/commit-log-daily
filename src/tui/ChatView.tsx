@@ -411,7 +411,7 @@ function AssistantBubble({
                     dimColor={tc.status !== "error"}
                   >
                     {"   "}
-                    {tc.status === "error" ? "⊘" : "📤"}{" "}
+                    {tc.status === "error" ? "⊘" : "╚"}{" "}
                     {truncateResult(tc.result)}
                   </Text>
                 )}
@@ -429,8 +429,8 @@ function AssistantBubble({
           {hasFooter && (
             <Box marginTop={hasContent || hasToolCalls ? 1 : 0}>
               <Text dimColor>
-                ── tokens: in {tokenCountToUnit(tokenUsage!.input_tokens)}{" "}
-                / out {tokenCountToUnit(tokenUsage!.output_tokens)}
+                ── tokens: ↑ {tokenCountToUnit(tokenUsage!.input_tokens)}{" "}
+                / ↓ {tokenCountToUnit(tokenUsage!.output_tokens)}
               </Text>
             </Box>
           )}

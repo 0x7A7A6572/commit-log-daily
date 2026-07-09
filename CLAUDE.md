@@ -32,10 +32,11 @@ bin/agent.js
             ├─ ConfigView         ← /config 斜杠命令打开，键盘导航编辑配置
             ├─ ProjectsView       ← 项目管理（/projects）
             ├─ HistoryView        ← 历史会话（/history），支持恢复和删除
+            ├─ TemplatesView     ← 报告模板管理（/templates），创建/编辑/删除
             └─ useSession.ts      ← 核心 Hook：消息管理、Agent 调用、持久化
 ```
 
-**视图切换**：App 通过 `useState<ViewMode>` 切换。`/config`/`/history`/`/projects` 斜杠命令切换对应视图。所有视图共用一个真实 Ink `render(<App />)` 实例。
+**视图切换**：App 通过 `useState<ViewMode>` 切换。`/config`/`/history`/`/projects`/`/templates` 斜杠命令切换对应视图。所有视图共用一个真实 Ink `render(<App />)` 实例。
 
 ### Agent 两阶段工作流
 

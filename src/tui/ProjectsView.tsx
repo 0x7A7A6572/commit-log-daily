@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Box, Text, useInput } from 'ink';
+import { Box, BoxProps, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { readConfig, writeConfig } from '../config/store.js';
 import type { ProjectConfig } from '../config/schema.js';
@@ -13,6 +13,14 @@ interface ProjectsViewProps {
   /** 返回聊天页的回调 */
   onBack: () => void;
 }
+
+const modelStyle: BoxProps = {
+  borderTop: true,
+  borderBottom: false,
+  borderLeft: false,
+  borderRight: false,
+}
+
 
 /**
  * 项目管理独立页面
@@ -212,9 +220,9 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
 
       {/* 添加 — 名称输入 */}
       {mode === 'add-name' && (
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={1} flexDirection="column" {...modelStyle}  borderStyle="single" >
           <Text bold>添加项目 — 第 1/2 步：输入项目名称</Text>
-          <Box>
+          <Box marginBottom={1}>
             <Text color="cyan">名称: </Text>
             <TextInput
               value={newName}
@@ -233,9 +241,9 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
 
       {/* 添加 — 路径输入 */}
       {mode === 'add-path' && (
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={1} flexDirection="column" {...modelStyle}   borderStyle="single">
           <Text bold>添加项目 — 第 2/2 步：输入项目路径</Text>
-          <Box>
+          <Box marginBottom={1}>
             <Text color="cyan">路径: </Text>
             <TextInput
               value={newPath}
