@@ -78,7 +78,7 @@ export function HistoryView({ onRestore, onBack }: HistoryViewProps) {
   const selectedSession = sessions[selectedIndex] ?? null;
 
   return (
-    <Box flexDirection="column" height={24}>
+    <Box flexDirection="column" minHeight={24}>
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">

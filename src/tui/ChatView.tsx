@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Box, Text, useInput, Static } from "ink";
+import React, { useState } from "react";
+import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { LoadingView } from "./components/Loading.js";
+import { WELCOME_MESSAGE } from "./welcome.js";
 import { readConfig } from "../config/store.js";
 import type { SessionContext } from "../agent/types.js";
 import { tokenCountToUnit } from "../shared/utils.js";
@@ -84,6 +85,9 @@ export function ChatView({
   const config = readConfig();
   const safeMode = config.safety.safeMode;
 
+  // 工具调用详情折叠状态（Ctrl+T 切换），默认折叠
+  const [showToolDetails, setShowToolDetails] = useState(false);
+
   // 输入框边框颜色：安全模式关闭时用黄色警告
   const inputBorderColor = safeMode
     ? showCommands
@@ -140,6 +144,12 @@ export function ChatView({
       process.exit(0);
     }
 
+    // Ctrl+T 切换工具调用详情折叠
+    if (key.ctrl && _input === "t") {
+      setShowToolDetails((prev) => !prev);
+      return;
+    }
+
     if (showCommands && filteredCommands.length > 0) {
       if (key.upArrow) {
         setSelectedIndex(
@@ -171,59 +181,18 @@ export function ChatView({
     visibleSlice.start + MENU_VISIBLE_MAX,
   );
 
-  // 稳定消息缓存：用 ref 累积已稳定的消息，只增不减
-  // Static 不参与 Ink 每帧重绘 → 终端 scrollback 不会被新帧冲掉
-  const stableRef = useRef<ChatMessage[]>([]);
-  const [, bumpStable] = useState(0);
-
-  useEffect(() => {
-    // 计算 stableCount：streaming 期间最后一条 assistant 之外的都算稳定
-    let stableCount: number;
-    if (messages.length === 0) {
-      stableCount = 0;
-    } else if (!isWaiting) {
-      // 不在 streaming，全部稳定
-      stableCount = messages.length;
-    } else {
-      // streaming 中：最后一条 assistant 是活的，其他已稳定
-      const last = messages[messages.length - 1]!;
-      stableCount =
-        last.role === 'assistant' ? messages.length - 1 : messages.length;
-    }
-
-    // 追加新稳定的消息到 ref
-    if (stableRef.current.length < stableCount) {
-      const newStable = messages.slice(
-        stableRef.current.length,
-        stableCount,
-      );
-      stableRef.current = [...stableRef.current, ...newStable];
-      bumpStable((n) => n + 1);
-    }
-  }, [messages, isWaiting]);
-
-  // 活消息：streaming 期间持续变化的那一条 assistant
-  const liveMessage = useMemo(() => {
-    if (!isWaiting || messages.length === 0) return undefined;
-    const last = messages[messages.length - 1]!;
-    return last.role === 'assistant' ? last : undefined;
-  }, [messages, isWaiting]);
-
   return (
     <Box flexDirection="column">
-      {/* 消息区域 — 稳定消息用 Static 锚定，活消息单独渲染 */}
+      {/* 消息区域 */}
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
-        {stableRef.current.length === 0 && !liveMessage && (
-          <Box paddingLeft={2} paddingTop={1}>
-            <Text dimColor>发送消息开始对话…</Text>
+        {messages.length === 0 && (
+          <Box paddingLeft={2} paddingTop={1} flexDirection="column">
+            <Text>{WELCOME_MESSAGE}</Text>
           </Box>
         )}
-        <Static items={stableRef.current}>
-          {(msg: ChatMessage) => (
-            <MessageBubble message={msg} />
-          )}
-        </Static>
-        {liveMessage && <MessageBubble message={liveMessage} />}
+        {messages.map((msg, i) => (
+          <MessageBubble key={i} message={msg} showToolDetails={showToolDetails} />
+        ))}
         {isWaiting && (
           <Box paddingLeft={2} paddingTop={1}>
             <LoadingView loadingText="thinking..." color="yellow" loading />
@@ -290,7 +259,7 @@ export function ChatView({
                   : " 输入消息 (/ 打开命令)…"
             }
           />
-          <Text dimColor> · / 打开命令 · Ctrl+C 退出</Text>
+          {/* <Text dimColor> · / 打开命令 · Ctrl+C 退出</Text> */}
         </Box>
 
         {/* 当前模式和 token 消耗 */}
@@ -311,8 +280,10 @@ export function ChatView({
 /** 单条消息气泡 — Claude 风格，memo 防止流式渲染时非最后一条消息重绘 */
 const MessageBubble = React.memo(function MessageBubble({
   message,
+  showToolDetails,
 }: {
   message: ChatMessage;
+  showToolDetails: boolean;
 }) {
   if (message.role === "system") {
     return (
@@ -331,7 +302,7 @@ const MessageBubble = React.memo(function MessageBubble({
     return <UserBubble content={message.content} />;
   }
 
-  return <AssistantBubble message={message} />;
+  return <AssistantBubble message={message} showToolDetails={showToolDetails} />;
 });
 
 /** 用户消息 — 右对齐，绿色边框 */
@@ -341,17 +312,18 @@ function UserBubble({ content }: { content: string }): React.ReactElement {
   return (
     <Box
       flexDirection="row"
-      justifyContent="flex-end"
-      paddingLeft={4}
+      justifyContent="flex-start"
+      paddingLeft={1}
       paddingRight={1}
       marginTop={2}
+      backgroundColor="white"
     >
-      <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
-        <Text bold color="green">
-          You {":)"}
+      <Box paddingRight={1}>
+        <Text bold color="black">
+           {":)"}You:{" "}
         </Text>
         {lines.map((line, i) => (
-          <Text key={i}>{line || " "}</Text>
+          <Text key={i} color="black">{line || " "}</Text>
         ))}
       </Box>
     </Box>
@@ -361,8 +333,10 @@ function UserBubble({ content }: { content: string }): React.ReactElement {
 /** 助手消息 — 左对齐，蓝色左边框，展示思考过程 + 工具调用 + 文本 + token */
 function AssistantBubble({
   message,
+  showToolDetails,
 }: {
   message: ChatMessage;
+  showToolDetails: boolean;
 }): React.ReactElement {
   const { content, reasoning, toolCalls, tokenUsage } = message;
   const lines = content.split("\n");
@@ -387,35 +361,62 @@ function AssistantBubble({
           <Text color="cyan">{"│"}</Text>
         </Box>
         <Box flexDirection="column" flexGrow={1}>
-          {/* 思考过程 */}
-          {hasReasoning && (
-            <Box flexDirection="column" marginBottom={hasToolCalls || hasContent ? 1 : 0}>
-              <Text color="yellow" dimColor>
-                ✱ 思考过程：
-              </Text>
-              <Text dimColor>{truncateReasoning(reasoning!)}</Text>
-            </Box>
-          )}
+          {/* 思考过程 + 工具调用（共享折叠逻辑） */}
+          {(() => {
+            const tc = hasToolCalls ? toolCalls![toolCalls!.length - 1] : undefined;
+            // 展开条件：用户手动展开、工具执行中（无 result）、或错误状态
+            const showDetails =
+              showToolDetails ||
+              (tc && (tc.result === undefined || tc.status === "error"));
+            // 折叠时若思考过程或工具调用已完成，显示折叠提示
+            const hasFolded =
+              !showDetails &&
+              (hasReasoning || (tc && tc.result !== undefined && tc.status !== "error"));
 
-          {/* 工具调用 — 仅渲染最新一条，显示总数 */}
-          {hasToolCalls && (() => {
-            const total = toolCalls!.length;
-            const tc = toolCalls![total - 1]!;
             return (
-              <Box flexDirection="column" marginBottom={hasContent ? 1 : 0}>
-                <Text color="cyan">☍ {tc.name} <Text dimColor>[{total}]</Text></Text>
-                <Text dimColor>   ♨ {formatArgs(tc.args)}</Text>
-                {tc.result !== undefined && (
-                  <Text
-                    color={tc.status === "error" ? "red" : undefined}
-                    dimColor={tc.status !== "error"}
-                  >
-                    {"   "}
-                    {tc.status === "error" ? "⊘" : "╚"}{" "}
-                    {truncateResult(tc.result)}
-                  </Text>
+              <>
+                {/* 思考过程 — 仅在展开时显示 */}
+                {showDetails && hasReasoning && (
+                  <Box flexDirection="column" marginBottom={hasToolCalls || hasContent ? 1 : 0}>
+                    <Text color="yellow" dimColor>
+                      ✱ 思考过程：
+                    </Text>
+                    <Text dimColor>{truncateReasoning(reasoning!)}</Text>
+                  </Box>
                 )}
-              </Box>
+
+                {/* 工具调用 — 仅渲染最新一条 */}
+                {hasToolCalls && tc && (
+                  <Box flexDirection="column" marginBottom={hasContent ? 1 : 0}>
+                    <Text color="cyan">
+                      ☍ {tc.name} <Text dimColor>[{toolCalls!.length}]</Text>
+                      {!showDetails && <Text dimColor>  Ctrl+T 展开详情</Text>}
+                    </Text>
+                    {showDetails && (
+                      <>
+                        <Text dimColor>   ♨ {formatArgs(tc.args)}</Text>
+                        {tc.result !== undefined && (
+                          <Text
+                            color={tc.status === "error" ? "red" : undefined}
+                            dimColor={tc.status !== "error"}
+                          >
+                            {"   "}
+                            {tc.status === "error" ? "⊘" : "╚"}{" "}
+                            {truncateResult(tc.result)}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </Box>
+                )}
+
+                {/* 折叠提示：思考过程或工具调用已完成但被收起 */}
+                {hasFolded && !hasToolCalls && (
+                  <Box flexDirection="column" marginBottom={hasContent ? 1 : 0}>
+                    <Text dimColor>✱ 思考过程 Ctrl+T 展开</Text>
+                  </Box>
+                )}
+              </>
             );
           })()}
 

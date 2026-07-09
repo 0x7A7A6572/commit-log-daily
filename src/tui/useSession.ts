@@ -9,7 +9,6 @@ import type { ToolCallDisplay, ChatMessage } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
 import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
 import { readConfig } from '../config/store.js';
-import { WELCOME_MESSAGE } from './welcome.js';
 
 /** 会话 Hook 的返回值 */
 interface SessionState {
@@ -224,9 +223,7 @@ function deserializeMessage(stored: StoredMessage): BaseMessage {
  * 维护消息历史、阶段切换、与 Agent 交互
  */
 export function useSession(): SessionState {
-  const [langMessages, setLangMessages] = useState<BaseMessage[]>([
-    new SystemMessage(WELCOME_MESSAGE),
-  ]);
+  const [langMessages, setLangMessages] = useState<BaseMessage[]>([]);
   const [phase, setPhase] = useState<AgentPhase>('collect');
   const [isWaiting, setIsWaiting] = useState<boolean>(false);
   const contextRef = useRef<SessionContext>(createEmptyContext());
@@ -248,7 +245,7 @@ export function useSession(): SessionState {
         pendingTaskResetRef.current = false;
         // 新任务：重置对话历史和会话 ID，避免上下文污染
         currentSessionIdRef.current = null;
-        setLangMessages([new SystemMessage(WELCOME_MESSAGE), userMsg]);
+        setLangMessages([userMsg]);
         conversationMessages = [];
       } else {
         setLangMessages([...langMessages, userMsg]);
@@ -322,11 +319,7 @@ export function useSession(): SessionState {
           }
 
           // 实时更新 UI —— 每个超步用户都能看到新消息
-          const displayMessages: BaseMessage[] = [
-            new SystemMessage(WELCOME_MESSAGE),
-            ...resultMessages,
-          ];
-          setLangMessages(displayMessages);
+          setLangMessages(resultMessages);
           setPhase(newPhase);
         }
 
@@ -386,11 +379,8 @@ export function useSession(): SessionState {
       const full = loadSession(sessionId);
       if (!full) return;
 
-      // 还原消息（不包含 system —— system 消息在下方重新注入）
+      // 还原消息
       const restored: BaseMessage[] = full.messages.map(deserializeMessage);
-
-      // 注入 SystemMessage（欢迎语）
-      restored.unshift(new SystemMessage(WELCOME_MESSAGE));
 
       setLangMessages(restored);
       setPhase(full.phase);

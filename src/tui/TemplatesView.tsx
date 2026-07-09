@@ -236,15 +236,15 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
   });
 
   return (
-    <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
+    <Box flexDirection="column" paddingLeft={1} paddingRight={1} minHeight={24}>
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
           · commit-log-daily · 模板管理
         </Text>
       </Box>
-      <Text dimColor>
-        ↑↓ 选择  V 预览  E 编辑  N 新建  S 设为默认  D 删除  R 刷新  Esc 返回
+      <Text dimColor >
+        ↑↓ 选择  S 设为默认  R 刷新  Esc 返回
       </Text>
 
       {/* 预览模式 */}
@@ -294,34 +294,45 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
 
       {/* 模板列表 */}
       {mode === 'list' && templates.length === 0 && (
-        <Box marginTop={1}>
+        <Box marginTop={1} flexGrow={1}>
           <Text dimColor>
             {' '} 暂无模板文件。按 N 新建，或在 ~/.commit-log-daily/templates/ 下创建 .md 文件。
           </Text>
         </Box>
       )}
 
-      {mode === 'list' &&
-        templates.map((t, i) => {
-          const isFocused = i === focusIndex;
-          const pointer = isFocused ? '❯' : ' ';
-          const color = isFocused ? 'cyan' : undefined;
-          const isBuiltin = t.filename === 'default';
+      {mode === 'list' && (
+        <Box flexGrow={1} marginTop={1} flexDirection="column">
+          {templates.map((t, i) => {
+            const isFocused = i === focusIndex;
+            const pointer = isFocused ? '❯' : ' ';
+            const color = isFocused ? 'cyan' : undefined;
+            const isBuiltin = t.filename === 'default';
 
-          return (
-            <Box key={t.filename}>
-              <Text color={color}>
-                {pointer} {t.filename}
-                {t.isDefault ? ' [当前]' : ''}
-              </Text>
-              {isBuiltin && (
-                <Box marginLeft={1} paddingX={1} backgroundColor={'white'}>
-                  <Text color={'black'}>内置</Text>
-                </Box>
-              )}
-            </Box>
-          );
-        })}
+            return (
+              <Box key={t.filename}>
+                <Text color={color}>
+                  {pointer} {t.filename}
+                  {t.isDefault ? ' [当前]' : ''}
+                </Text>
+                {isBuiltin && (
+                  <Box marginLeft={1} paddingX={1} backgroundColor={'white'}>
+                    <Text color={'black'}>内置</Text>
+                  </Box>
+                )}
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+
+      {/* 常用操作提示 */}
+      <Box marginTop={1}>
+        <Text dimColor>
+          V 预览  E 编辑  N 新建   D 删除
+        </Text>
+      </Box>
+
 
       {/* 状态消息 */}
       {statusMsg && mode !== 'delete-confirm' && (
@@ -329,8 +340,8 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
           <Text
             color={
               statusMsg.includes('失败') ||
-              statusMsg.includes('不可') ||
-              statusMsg.includes('不能')
+                statusMsg.includes('不可') ||
+                statusMsg.includes('不能')
                 ? 'red'
                 : 'green'
             }

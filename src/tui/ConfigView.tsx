@@ -120,7 +120,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
   });
 
   return (
-    <Box flexDirection="column" paddingLeft={1} paddingRight={1}>
+    <Box flexDirection="column" paddingLeft={1} paddingRight={1} minHeight={24}>
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
