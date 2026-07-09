@@ -5,15 +5,18 @@ import { ConfigView } from './ConfigView.js';
 import { HistoryView } from './HistoryView.js';
 import { ProjectsView } from './ProjectsView.js';
 import { TemplatesView } from './TemplatesView.js';
+import { ProjectDetailView } from './ProjectDetailView.js';
 import { useSession } from './useSession.js';
 import type { FullSession } from '../session/types.js';
 
 /** 视图模式 */
-type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates';
+type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates' | 'projectDetail';
 
 /** TUI 主应用组件 */
 function App() {
   const [view, setView] = useState<ViewMode>('chat');
+  const [detailProjectName, setDetailProjectName] = useState<string>('');
+  const [detailProjectPath, setDetailProjectPath] = useState<string>('');
   const { messages, isWaiting, tokenUsage, handleSubmit, loadHistorySession, pendingApproval, handleApproval } = useSession();
 
 
@@ -58,9 +61,11 @@ function App() {
     setView('chat');
   }, []);
 
-  /** 选中项目 — 目前返回聊天页，后续可扩展为项目详情视图 */
-  const handleProjectsSelect = useCallback((_name: string, _path: string) => {
-    setView('chat');
+  /** 选中项目 — 进入项目详情视图 */
+  const handleProjectsSelect = useCallback((name: string, path: string) => {
+    setDetailProjectName(name);
+    setDetailProjectPath(path);
+    setView('projectDetail');
   }, []);
 
   if (view === 'config') {
@@ -77,6 +82,16 @@ function App() {
 
   if (view === 'templates') {
     return <TemplatesView onBack={() => setView('chat')} />;
+  }
+
+  if (view === 'projectDetail') {
+    return (
+      <ProjectDetailView
+        projectName={detailProjectName}
+        projectPath={detailProjectPath}
+        onBack={() => setView('projects')}
+      />
+    );
   }
 
   return (
