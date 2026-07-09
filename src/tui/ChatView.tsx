@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import TextInput from "ink-text-input";
 import { LoadingView } from "./components/Loading.js";
-import { WELCOME_MESSAGE } from "./welcome.js";
+import { MultilineTextInput } from "./components/MultilineTextInput.js";
+import { LOGO, WELCOME_GUIDE } from "./welcome.js";
 import { readConfig } from "../config/store.js";
 import type { SessionContext } from "../agent/types.js";
 import { tokenCountToUnit } from "../shared/utils.js";
@@ -187,7 +187,8 @@ export function ChatView({
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
         {messages.length === 0 && (
           <Box paddingLeft={2} paddingTop={1} flexDirection="column">
-            <Text>{WELCOME_MESSAGE}</Text>
+            <Text>{LOGO}</Text>
+            <Text dimColor>{WELCOME_GUIDE}</Text>
           </Box>
         )}
         {messages.map((msg, i) => (
@@ -247,7 +248,7 @@ export function ChatView({
           marginLeft={1}
           marginRight={1}
         >
-          <TextInput
+          <MultilineTextInput
             value={input}
             onChange={handleInputChange}
             onSubmit={handleSubmit}
@@ -256,7 +257,7 @@ export function ChatView({
                 ? " 等待 Agent 响应…"
                 : showCommands
                   ? " 输入命令…"
-                  : " 输入消息 (/ 打开命令)…"
+                  : " 输入消息 (Shift+Enter 换行, / 打开命令)…"
             }
           />
           {/* <Text dimColor> · / 打开命令 · Ctrl+C 退出</Text> */}
@@ -305,7 +306,7 @@ const MessageBubble = React.memo(function MessageBubble({
   return <AssistantBubble message={message} showToolDetails={showToolDetails} />;
 });
 
-/** 用户消息 — 右对齐，绿色边框 */
+/** 用户消息 — 左对齐，白色背景 */
 function UserBubble({ content }: { content: string }): React.ReactElement {
   const lines = content.split("\n");
 
@@ -318,12 +319,16 @@ function UserBubble({ content }: { content: string }): React.ReactElement {
       marginTop={2}
       backgroundColor="white"
     >
-      <Box paddingRight={1}>
-        <Text bold color="black">
-           {":)"}You:{" "}
-        </Text>
+      <Box flexDirection="column" paddingRight={1}>
+        <Box>
+          <Text bold color="black">
+            {":)"}You:{" "}
+          </Text>
+        </Box>
         {lines.map((line, i) => (
-          <Text key={i} color="black">{line || " "}</Text>
+          <Box key={i}>
+            <Text color="black">{line || " "}</Text>
+          </Box>
         ))}
       </Box>
     </Box>
@@ -423,7 +428,9 @@ function AssistantBubble({
           {/* 文本回复 */}
           {hasContent &&
             lines.map((line, i) => (
-              <Text key={i}>{line || " "}</Text>
+              <Box key={i}>
+                <Text>{line || " "}</Text>
+              </Box>
             ))}
 
           {/* token 消耗脚注 */}

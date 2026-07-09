@@ -1,13 +1,13 @@
 /** 欢迎页 LOGO 和引导语 */
 
-const LOGO = String.raw`
+export const LOGO = String.raw`
   ▄▄▄▄     ▄▄     ▄▄▄   ▄▄▄▄     ▄▄▄▄   ▄▄▄  ▄▄ ▄▄  ▄▄ ▄▄
  ██▀▀▀ ▄▄▄ ██    ██▀██ ██ ▄▄ ▄▄▄ ██▀██ ██▀██ ██ ██  ▀███▀
  ▀████     ██▄▄▄ ▀███▀ ▀███▀     ████▀ ██▀██ ██ ██▄▄▄ █
 `;
 
-/** 欢迎消息 */
-export const WELCOME_MESSAGE = `${LOGO}
+/** 欢迎引导语 */
+export const WELCOME_GUIDE = `
 commit-log-daily v2 — 开发者日报/周报智能体
 
 从 Git 提交记录中自动采集你的开发活动，智能生成结构化日报/周报。
@@ -21,6 +21,6 @@ commit-log-daily v2 — 开发者日报/周报智能体
   • 我昨天做了哪些事
   • 添加一个项目 /path/to/your/repo
   • 查看当前配置
-  
+
 ══════════════════════════════════════════
   `;
