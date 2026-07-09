@@ -28,8 +28,10 @@ const modelStyle: BoxProps = {
  * 项目管理独立页面
  * 键盘操作：
  *   ↑↓  导航项目列表
+ *   Enter  查看选中项目详情
  *   A   添加项目
  *   D   删除选中项目
+ *   S   保存配置
  *   Esc 返回聊天
  */
 export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
@@ -204,7 +206,7 @@ export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
         </Text>
       </Box>
       <Text dimColor>
-        ↑↓ 选择  A 添加  D 删除  S 保存  Esc 返回
+        ↑↓ 选择  Enter 详情  A 添加  D 删除  S 保存  Esc 返回
       </Text>
 
 
