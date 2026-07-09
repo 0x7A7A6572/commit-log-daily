@@ -53,6 +53,7 @@ export function openInEditor(filePath: string): Promise<void> {
 
             if (useGui) {
                 // GUI 编辑器 — 不等待，立即 resolve
+                child.on('error', () => {});
                 child.unref();
                 resolve();
             } else {
@@ -77,14 +78,7 @@ export function openInEditor(filePath: string): Promise<void> {
                 });
             }
         } catch (err) {
-            const code = (err as NodeJS.ErrnoException).code;
-            if (code === 'ENOENT') {
-                reject(
-                    new Error(`未找到编辑器 "${editorCmd}"，请设置 $EDITOR 环境变量`),
-                );
-            } else {
-                reject(err instanceof Error ? err : new Error(String(err)));
-            }
+            reject(err instanceof Error ? err : new Error(String(err)));
         }
     });
 }
