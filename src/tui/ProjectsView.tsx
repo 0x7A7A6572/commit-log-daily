@@ -12,6 +12,8 @@ type Mode = 'list' | 'add-name' | 'add-path' | 'delete-confirm';
 interface ProjectsViewProps {
   /** 返回聊天页的回调 */
   onBack: () => void;
+  /** 选中项目查看详情的回调 */
+  onSelect: (name: string, path: string) => void;
 }
 
 const modelStyle: BoxProps = {
@@ -30,7 +32,7 @@ const modelStyle: BoxProps = {
  *   D   删除选中项目
  *   Esc 返回聊天
  */
-export function ProjectsView({ onBack }: ProjectsViewProps) {
+export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
   const [projects, setProjects] = useState<ProjectConfig[]>(() => readConfig().projects);
   const [focusIndex, setFocusIndex] = useState<number>(0);
   const [mode, setMode] = useState<Mode>('list');
@@ -128,6 +130,15 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
 
     if (input === 's' || input === 'S') {
       save();
+      return;
+    }
+
+    if (key.return) {
+      if (projects.length === 0) return;
+      const selected = projects[focusIndex];
+      if (selected) {
+        onSelect(selected.name, selected.path);
+      }
       return;
     }
 

@@ -58,6 +58,11 @@ function App() {
     setView('chat');
   }, []);
 
+  /** 选中项目 — 目前返回聊天页，后续可扩展为项目详情视图 */
+  const handleProjectsSelect = useCallback((_name: string, _path: string) => {
+    setView('chat');
+  }, []);
+
   if (view === 'config') {
     return <ConfigView onClose={handleConfigClose} />;
   }
@@ -67,7 +72,7 @@ function App() {
   }
 
   if (view === 'projects') {
-    return <ProjectsView onBack={() => setView('chat')} />;
+    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} />;
   }
 
   if (view === 'templates') {
