@@ -1,20 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getProjectStats } from '../shared/project-stats.js';
-import type { ProjectStats, StatsRange } from '../shared/project-stats.js';
+import type { ProjectStats } from '../shared/project-stats.js';
 
-/** 时间范围顺序 */
-const RANGE_ORDER: StatsRange[] = ['all', '7days', '30days'];
-
-/** 时间范围标签 */
-const RANGE_LABEL: Record<StatsRange, string> = {
-  all: 'All time',
-  '7days': 'Last 7 days',
-  '30days': 'Last 30 days',
-};
-
-/** 热力图密度字符，从浅到深 */
-const DENSITY_CHARS = ['·', '░', '▒', '▓', '█'] as const;
+/** 热力图密度字符，从浅到深（仅着色层级，· 作为空单元格背景单独处理） */
+const DENSITY_CHARS = ['░', '▒', '▓', '█'] as const;
 
 /** 月份名称缩写 */
 const MONTH_NAMES = [
@@ -40,14 +30,13 @@ interface ProjectDetailViewProps {
 
 /**
  * 项目详情视图
- * 展示热力图和统计指标，支持左/右键切换时间范围
+ * 展示热力图和统计指标
  */
 export function ProjectDetailView({
   projectName,
   projectPath,
   onBack,
 }: ProjectDetailViewProps) {
-  const [range, setRange] = useState<StatsRange>('all');
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +47,7 @@ export function ProjectDetailView({
     setError(null);
     setStats(null);
 
-    getProjectStats(projectPath, range)
+    getProjectStats(projectPath, '1year')
       .then((result) => {
         if (!cancelled) {
           setStats(result);
@@ -75,26 +64,11 @@ export function ProjectDetailView({
     return () => {
       cancelled = true;
     };
-  }, [projectPath, range]);
+  }, [projectPath]);
 
   useInput((_input, key) => {
     if (key.escape) {
       onBack();
-      return;
-    }
-    if (key.leftArrow) {
-      setRange((prev) => {
-        const idx = RANGE_ORDER.indexOf(prev);
-        return RANGE_ORDER[(idx - 1 + RANGE_ORDER.length) % RANGE_ORDER.length]!;
-      });
-      return;
-    }
-    if (key.rightArrow) {
-      setRange((prev) => {
-        const idx = RANGE_ORDER.indexOf(prev);
-        return RANGE_ORDER[(idx + 1) % RANGE_ORDER.length]!;
-      });
-      return;
     }
   });
 
@@ -127,25 +101,10 @@ export function ProjectDetailView({
               <Text dimColor>该项目尚无提交记录</Text>
             </Box>
           ) : (
-            <>
-              {/* 热力图 */}
-              <HeatmapGrid stats={stats} range={range} />
-
-              {/* 时间范围切换器 */}
-              <Box marginTop={1}>
-                {RANGE_ORDER.map((r) => {
-                  const isActive = r === range;
-                  const label = RANGE_LABEL[r];
-                  return (
-                    <Text key={r} color={isActive ? 'cyan' : undefined} dimColor={!isActive}>
-                      {label}
-                      {r !== RANGE_ORDER[RANGE_ORDER.length - 1] ? ' · ' : ''}
-                    </Text>
-                  );
-                })}
-              </Box>
-            </>
+            <HeatmapGrid stats={stats} />
           )}
+          {/** 指标 */}
+          <HeatmapLegend />
 
           {/* 统计指标（即使 totalCommits === 0 也显示，因为 activeDays 等仍有意义） */}
           <StatsPanel stats={stats} />
@@ -154,7 +113,7 @@ export function ProjectDetailView({
 
       {/* 底部操作提示 */}
       <Box marginTop={1}>
-        <Text dimColor>{'← →'} 切换时间范围   Esc 返回项目列表</Text>
+        <Text dimColor>Esc 返回项目列表</Text>
       </Box>
     </Box>
   );
@@ -164,24 +123,30 @@ export function ProjectDetailView({
 // 热力图组件
 // ============================================================
 
-/** 计算四分位数阈值 */
-function computeQuartiles(counts: number[]): [number, number, number] {
+/** 计算五分位阈值（20%/40%/60%/80%） */
+function computeQuartiles(counts: number[]): [number, number, number, number] {
   const nonZero = counts.filter((c) => c > 0).sort((a, b) => a - b);
-  if (nonZero.length === 0) return [1, 1, 1];
+  if (nonZero.length === 0) return [1, 1, 1, 1];
 
-  const q1 = nonZero[Math.floor(nonZero.length * 0.25)]!;
-  const q2 = nonZero[Math.floor(nonZero.length * 0.50)]!;
-  const q3 = nonZero[Math.floor(nonZero.length * 0.75)]!;
-  return [q1, q2, q3];
+  const q1 = nonZero[Math.floor(nonZero.length * 0.2)]!;
+  const q2 = nonZero[Math.floor(nonZero.length * 0.4)]!;
+  const q3 = nonZero[Math.floor(nonZero.length * 0.6)]!;
+  const q4 = nonZero[Math.floor(nonZero.length * 0.8)]!;
+  return [q1, q2, q3, q4];
 }
 
-/** 根据提交次数和四分位阈值返回密度字符 */
-function densityChar(count: number, thresholds: [number, number, number]): string {
-  if (count === 0) return DENSITY_CHARS[0]!;
-  if (count <= thresholds[0]) return DENSITY_CHARS[1]!;
-  if (count <= thresholds[1]) return DENSITY_CHARS[2]!;
-  if (count <= thresholds[2]) return DENSITY_CHARS[3]!;
-  return DENSITY_CHARS[4]!;
+/** 根据提交次数和分位阈值返回密度字符，无数据返回 · */
+function densityChar(count: number, thresholds: [number, number, number, number]): string {
+  if (count === 0) return '·';
+  if (count <= thresholds[0]) return DENSITY_CHARS[0]!;
+  if (count <= thresholds[1]) return DENSITY_CHARS[1]!;
+  if (count <= thresholds[2]) return DENSITY_CHARS[2]!;
+  return DENSITY_CHARS[3]!;
+}
+
+/** 判断密度字符是否需要着色（仅 · 不着色，░▒▓█ 着色） */
+function isColoredChar(char: string): boolean {
+  return char !== '·';
 }
 
 /**
@@ -198,33 +163,38 @@ function toLocalDateKey(d: Date): string {
 
 interface HeatmapGridProps {
   stats: ProjectStats;
-  range: StatsRange;
 }
 
-/** 提交热力图 — GitHub 风格 7 行 x N 列网格 */
-function HeatmapGrid({ stats, range }: HeatmapGridProps) {
+/** 提交热力图 */
+function HeatmapGrid({ stats }: HeatmapGridProps) {
   const counts = Array.from(stats.heatmap.values());
   const thresholds = computeQuartiles(counts);
 
+  return <WeekGridHeatmap stats={stats} thresholds={thresholds} />;
+}
+
+// ============================================================
+// 周网格热力图
+// ============================================================
+
+/** GitHub 风格 7 行 × N 列周网格热力图，仅 ░▒▓█ 着色 */
+function WeekGridHeatmap({
+  stats,
+  thresholds,
+}: {
+  stats: ProjectStats;
+  thresholds: [number, number, number, number];
+}) {
   // 确定日期范围
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  let rangeStart: Date;
-  if (range === 'all') {
-    // All time: 使用最早提交日期作为起点，至少回溯一年
-    const dates = Array.from(stats.heatmap.keys()).sort();
-    const earliestDate = dates.length > 0 ? new Date(dates[0]! + 'T00:00:00') : new Date(today);
-    const oneYearAgo = new Date(today);
-    oneYearAgo.setFullYear(today.getFullYear() - 1);
-    rangeStart = earliestDate < oneYearAgo ? earliestDate : oneYearAgo;
-  } else if (range === '7days') {
-    rangeStart = new Date(today);
-    rangeStart.setDate(today.getDate() - 7);
-  } else {
-    rangeStart = new Date(today);
-    rangeStart.setDate(today.getDate() - 30);
-  }
+  // 使用最早提交日期作为起点，至少回溯一年
+  const dates = Array.from(stats.heatmap.keys()).sort();
+  const earliestDate = dates.length > 0 ? new Date(dates[0]! + 'T00:00:00') : new Date(today);
+  const oneYearAgo = new Date(today);
+  oneYearAgo.setFullYear(today.getFullYear() - 1);
+  const rangeStart = earliestDate < oneYearAgo ? earliestDate : oneYearAgo;
 
   // 网格边界对齐到周一和周日
   const gridStart = new Date(rangeStart);
@@ -241,9 +211,9 @@ function HeatmapGrid({ stats, range }: HeatmapGridProps) {
   const totalDays = Math.round((gridEnd.getTime() - gridStart.getTime()) / MS_PER_DAY);
   const totalWeeks = Math.ceil(totalDays / 7);
 
-  // 构建 7 行 x totalWeeks 列的字符网格
-  // rows[0]=Mon, rows[1]=Tue, ..., rows[6]=Sun
-  const rows: string[] = Array.from({ length: 7 }, () => '');
+  // 构建 7 行 × totalWeeks 列的二维字符网格
+  // grid[0]=Mon, grid[1]=Tue, ..., grid[6]=Sun
+  const grid: string[][] = Array.from({ length: 7 }, () => []);
 
   // 月份标签
   const monthLabels: Array<{ col: number; label: string }> = [];
@@ -253,11 +223,10 @@ function HeatmapGrid({ stats, range }: HeatmapGridProps) {
     for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
       const cellDate = new Date(gridStart);
       cellDate.setDate(gridStart.getDate() + col * 7 + dayOfWeek);
-      // 使用本地日期格式化，与 heatmap Map 的键一致（git %ai 是本地时间）
       const dateKey = toLocalDateKey(cellDate);
       const count = stats.heatmap.get(dateKey) ?? 0;
       const char = densityChar(count, thresholds);
-      rows[dayOfWeek] += char;
+      grid[dayOfWeek]!.push(char);
 
       // 记录月份标签（每月第一周的第一个格子时记录）
       const month = cellDate.getMonth();
@@ -274,27 +243,43 @@ function HeatmapGrid({ stats, range }: HeatmapGridProps) {
   return (
     <Box flexDirection="column" marginTop={1}>
       {/* 月份标签行 */}
-      <Text color="blue">      {monthLine}</Text>
+      <Text>      {monthLine}</Text>
 
-      {/* 7 行热力图 */}
-      {rows.map((rowChars, dayIdx) => {
+      {/* 7 行热力图：每个格子独立 Text，仅 ░▒▓█ 着色 */}
+      {grid.map((rowCells, dayIdx) => {
         const label = DAY_LABELS[dayIdx + 1]; // dayIdx 0=Mon, 1=Tue, ...
         const labelStr = label ? label.padStart(3) : '   ';
         return (
-          <Text key={dayIdx} color="blue">
-            {labelStr} {rowChars}
-          </Text>
+          <Box key={dayIdx}>
+            <Text>{labelStr} </Text>
+            {rowCells.map((char, colIdx) => (
+              <Text key={colIdx} color={isColoredChar(char) ? 'blue' : undefined}>
+                {char}
+              </Text>
+            ))}
+          </Box>
         );
       })}
+    </Box>
+  );
+}
 
-      {/* 图例 */}
-      <Box marginTop={1}>
+// ============================================================
+// 共享图例
+// ============================================================
+
+/** 热力图图例 */
+function HeatmapLegend() {
+  return (
+    <Box marginTop={1}>
+      <Box>
+        <Text>{'      Less '}</Text>
         <Text color="blue">
-          {'      Less '}
-          {DENSITY_CHARS[1]} {DENSITY_CHARS[2]} {DENSITY_CHARS[3]} {DENSITY_CHARS[4]}
-          {' More'}
+          {DENSITY_CHARS[0]} {DENSITY_CHARS[1]} {DENSITY_CHARS[2]} {DENSITY_CHARS[3]}
         </Text>
+        <Text>{' More'}</Text>
       </Box>
+      <Box marginLeft={2}><Text>  ·  1 year ago</Text></Box>
     </Box>
   );
 }
@@ -349,22 +334,53 @@ interface StatsPanelProps {
   stats: ProjectStats;
 }
 
-/** 统计指标面板 */
+/** 两列布局左列宽度 */
+const LEFT_COL_WIDTH = 28;
+
+/** 统计指标面板 — 两列布局，数值高亮 */
 function StatsPanel({ stats }: StatsPanelProps) {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text>
-        总提交: {formatNumber(stats.totalCommits)}     活跃天数: {stats.activeDays}
-      </Text>
-      <Text>
-        最长连续: {stats.longestStreak} 天     当前连续: {stats.currentStreak} 天
-      </Text>
-      <Text>
-        代码: +{formatNumber(stats.addLines)}  -{formatNumber(stats.delLines)}     贡献者: {stats.contributors.length} 人
-      </Text>
-      <Text>
-        分支数: {stats.branchCount}     最活跃日: {formatShortDate(stats.mostActiveDate)}
-      </Text>
+      <Box>
+        <Box width={LEFT_COL_WIDTH}>
+          <Text>
+            总提交: <Text color="cyan">{formatNumber(stats.totalCommits)}</Text>
+          </Text>
+        </Box>
+        <Text>
+          活跃天数: <Text color="cyan">{stats.activeDays}</Text>
+        </Text>
+      </Box>
+      <Box>
+        <Box width={LEFT_COL_WIDTH}>
+          <Text>
+            最长连续: <Text color="cyan">{stats.longestStreak}</Text> 天
+          </Text>
+        </Box>
+        <Text>
+          当前连续: <Text color="cyan">{stats.currentStreak}</Text> 天
+        </Text>
+      </Box>
+      <Box>
+        <Box width={LEFT_COL_WIDTH}>
+          <Text>
+            代码: +<Text color="green">{formatNumber(stats.addLines)}</Text>  -<Text color="red">{formatNumber(stats.delLines)}</Text>
+          </Text>
+        </Box>
+        <Text>
+          贡献者: <Text color="cyan">{stats.contributors.length}</Text> 人
+        </Text>
+      </Box>
+      <Box>
+        <Box width={LEFT_COL_WIDTH}>
+          <Text>
+            分支数: <Text color="cyan">{stats.branchCount}</Text>
+          </Text>
+        </Box>
+        <Text>
+          最活跃日: <Text color="cyan">{formatShortDate(stats.mostActiveDate)}</Text>
+        </Text>
+      </Box>
     </Box>
   );
 }

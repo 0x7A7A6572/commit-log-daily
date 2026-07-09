@@ -1,7 +1,7 @@
 import { safeGitExecute } from './git.js';
 
 /** 时间范围 */
-export type StatsRange = 'all' | '7days' | '30days';
+export type StatsRange = 'all' | '7days' | '30days' | '1year';
 
 /** 项目统计数据 */
 export interface ProjectStats {
@@ -19,14 +19,16 @@ export interface ProjectStats {
 }
 
 /** 根据时间范围计算 --since 参数值 */
-function getSinceDate(range: StatsRange): string | null {
+function getSinceDate(range: StatsRange = '1year'): string | null {
   switch (range) {
     case '7days':
       return '7 days ago';
     case '30days':
       return '30 days ago';
+    case '1year':
+      return '1 year ago';
     case 'all':
-      return null; // 不传 --since，获取全部历史
+      return null;
   }
 }
 
