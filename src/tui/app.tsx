@@ -8,6 +8,7 @@ import { TemplatesView } from './TemplatesView.js';
 import { ProjectDetailView } from './ProjectDetailView.js';
 import { useSession } from './useSession.js';
 import type { FullSession } from '../session/types.js';
+import type { ProjectConfig } from '../config/schema.js';
 
 /** 视图模式 */
 type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates' | 'projectDetail';
@@ -68,6 +69,22 @@ function App() {
     setView('projectDetail');
   }, []);
 
+  /** 从项目管理页生成周报：计算近一周日期范围，切换到聊天页并发送消息 */
+  const handleGenerateReport = useCallback(
+    (project: ProjectConfig) => {
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const message = `为项目「${project.name}」（${project.path}）生成本周周报（${fmt(weekAgo)} ~ ${fmt(now)}）`;
+      setView('chat');
+      // 延迟一 tick 发送，确保视图切换后再提交消息
+      setImmediate(() => {
+        handleSubmit(message);
+      });
+    },
+    [handleSubmit],
+  );
+
   if (view === 'config') {
     return <ConfigView onClose={handleConfigClose} />;
   }
@@ -77,7 +94,7 @@ function App() {
   }
 
   if (view === 'projects') {
-    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} />;
+    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} onGenerateReport={handleGenerateReport} />;
   }
 
   if (view === 'templates') {
