@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Box, BoxProps, Text, useInput } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { readConfig, writeConfig } from '../config/store.js';
 import type { ProjectConfig } from '../config/schema.js';
+import { SettingsPage } from './components/SettingsPage.js';
 
 /** 页面模式 */
-type Mode = 'list' | 'add-name' | 'add-path' | 'delete-confirm';
+type Mode = 'list' | 'add-name' | 'add-path';
 
 interface ProjectsViewProps {
   /** 返回聊天页的回调 */
@@ -16,31 +17,17 @@ interface ProjectsViewProps {
   onSelect: (name: string, path: string) => void;
 }
 
-const modelStyle: BoxProps = {
-  borderTop: true,
-  borderBottom: false,
-  borderLeft: false,
-  borderRight: false,
-}
-
-
 /**
  * 项目管理独立页面
- * 键盘操作：
- *   ↑↓  导航项目列表
- *   Enter  查看选中项目详情
- *   A   添加项目
- *   D   删除选中项目
- *   S   保存配置
- *   Esc 返回聊天
+ * 使用 SettingsPage 列表模式提供搜索 + 分页 + 键盘导航
  */
 export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
   const [projects, setProjects] = useState<ProjectConfig[]>(() => readConfig().projects);
-  const [focusIndex, setFocusIndex] = useState<number>(0);
   const [mode, setMode] = useState<Mode>('list');
-  const [newName, setNewName] = useState<string>('');
-  const [newPath, setNewPath] = useState<string>('');
-  const [statusMsg, setStatusMsg] = useState<string>('');
+  const [newName, setNewName] = useState('');
+  const [newPath, setNewPath] = useState('');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   /** 重置添加表单 */
   const resetAddForm = () => {
@@ -49,11 +36,11 @@ export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
     setMode('list');
   };
 
-  /** 保存配置到磁盘 */
-  const save = () => {
+  /** 保存配置 */
+  const save = (list?: ProjectConfig[]) => {
     try {
       const config = readConfig();
-      config.projects = projects;
+      config.projects = list ?? projects;
       writeConfig(config);
       setStatusMsg('已保存');
     } catch (err) {
@@ -61,106 +48,15 @@ export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
     }
   };
 
-  useInput((input, key) => {
-    // 添加模式 — 名称输入
-    if (mode === 'add-name') {
-      if (key.escape) {
-        resetAddForm();
-        return;
-      }
-      return; // TextInput 处理输入和回车
-    }
-
-    // 添加模式 — 路径输入
-    if (mode === 'add-path') {
-      if (key.escape) {
-        resetAddForm();
-        return;
-      }
-      return; // TextInput 处理输入和回车
-    }
-
-    // 删除确认模式
-    if (mode === 'delete-confirm') {
-      if (input === 'y' || input === 'Y') {
-        const updated = projects.filter((_, i) => i !== focusIndex);
-        setProjects(updated);
-        setStatusMsg('项目已删除');
-        saveWithProjects(updated);
-        if (focusIndex >= updated.length && updated.length > 0) {
-          setFocusIndex(updated.length - 1);
-        }
-        setMode('list');
-        return;
-      }
-      if (input === 'n' || input === 'N' || key.escape) {
-        setMode('list');
-        setStatusMsg('');
-        return;
-      }
-      return;
-    }
-
-    // 列表模式
-    if (key.upArrow) {
-      setFocusIndex((prev) => (prev - 1 + Math.max(projects.length, 1)) % Math.max(projects.length, 1));
-      return;
-    }
-
-    if (key.downArrow) {
-      setFocusIndex((prev) => (prev + 1) % Math.max(projects.length, 1));
-      return;
-    }
-
-    if (input === 'a' || input === 'A') {
-      setMode('add-name');
-      setNewName('');
-      setNewPath('');
-      setStatusMsg('');
-      return;
-    }
-
-    if (input === 'd' || input === 'D') {
-      if (projects.length === 0) {
-        setStatusMsg('没有可删除的项目');
-        return;
-      }
-      setMode('delete-confirm');
-      setStatusMsg('');
-      return;
-    }
-
-    if (input === 's' || input === 'S') {
-      save();
-      return;
-    }
-
-    if (key.return) {
-      if (projects.length === 0) return;
-      const selected = projects[focusIndex];
-      if (selected) {
-        onSelect(selected.name, selected.path);
-      }
-      return;
-    }
-
-    if (key.escape) {
-      onBack();
-      return;
-    }
-  });
-
   /** 提交添加 — 校验路径并保存 */
   const submitAdd = () => {
     const absPath = path.resolve(newPath.trim());
 
-    // 校验路径存在
     if (!fs.existsSync(absPath)) {
       setStatusMsg(`路径不存在: ${absPath}`);
       return;
     }
 
-    // 校验是 Git 仓库
     const gitDir = path.join(absPath, '.git');
     if (!fs.existsSync(gitDir)) {
       setStatusMsg(`路径不是 Git 仓库: ${absPath}`);
@@ -171,152 +67,156 @@ export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
     let updated: ProjectConfig[];
 
     if (existing !== -1) {
-      // 更新已有项目
       updated = [...projects];
       updated[existing] = { name: newName.trim(), path: absPath };
       setStatusMsg(`项目 "${newName.trim()}" 已更新`);
     } else {
-      // 新增项目
       updated = [...projects, { name: newName.trim(), path: absPath }];
       setStatusMsg(`项目 "${newName.trim()}" 已添加`);
     }
 
     setProjects(updated);
-    saveWithProjects(updated);
+    save(updated);
     resetAddForm();
   };
 
-  /** 带 projects 的保存 */
-  const saveWithProjects = (list: ProjectConfig[]) => {
-    try {
-      const config = readConfig();
-      config.projects = list;
-      writeConfig(config);
-    } catch {
-      // 静默处理，display 操作已成功
-    }
-  };
-
-  return (
-    <Box flexDirection="column" minHeight={24} paddingLeft={1} paddingRight={1}>
-      {/* 标题栏 */}
-      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
-        <Text bold color="black">
-          · commit-log-daily · 项目管理
-        </Text>
-      </Box>
-      <Text dimColor>
-        ↑↓ 选择  Enter 详情  A 添加  D 删除  S 保存  Esc 返回
-      </Text>
-
-
-      {/* 项目列表 */}
-      {projects.length === 0 && mode === 'list' && (
-        <Box marginTop={1}>
-          <Text dimColor>  暂无项目，按 A 添加第一个项目</Text>
-        </Box>
-      )}
-
-      {projects.length > 0 && (
-        <ProjectList projects={projects} focusIndex={focusIndex} />
-      )}
-
-      {/* 删除确认 */}
-      {mode === 'delete-confirm' && projects[focusIndex] && (
-        <Box marginTop={1} flexDirection="column">
-          <Text color="yellow">
-            确认删除项目 "{projects[focusIndex]!.name}"？
-          </Text>
-          <Text dimColor>Y 确认 / N 或 Esc 取消</Text>
-        </Box>
-      )}
-
-      {/* 添加 — 名称输入 */}
-      {mode === 'add-name' && (
-        <Box marginTop={1} flexDirection="column" {...modelStyle}  borderStyle="single" >
-          <Text bold>添加项目 — 第 1/2 步：输入项目名称</Text>
-          <Box marginBottom={1}>
-            <Text color="cyan">名称: </Text>
-            <TextInput
-              value={newName}
-              onChange={setNewName}
-              onSubmit={() => {
-                if (newName.trim()) {
-                  setMode('add-path');
-                }
-              }}
-              placeholder="例如: my-project"
-            />
-          </Box>
-          <Text dimColor>回车确认 / Esc 取消</Text>
-        </Box>
-      )}
-
-      {/* 添加 — 路径输入 */}
-      {mode === 'add-path' && (
-        <Box marginTop={1} flexDirection="column" {...modelStyle}   borderStyle="single">
-          <Text bold>添加项目 — 第 2/2 步：输入项目路径</Text>
-          <Box marginBottom={1}>
-            <Text color="cyan">路径: </Text>
-            <TextInput
-              value={newPath}
-              onChange={setNewPath}
-              onSubmit={submitAdd}
-              placeholder="例如: /home/user/projects/my-project"
-            />
-          </Box>
-          <Text dimColor>回车确认 / Esc 取消</Text>
-        </Box>
-      )}
-
-      {/* 状态消息 */}
-      {statusMsg && mode === 'list' && (
-        <Box marginTop={1}>
-          <Text color={statusMsg.includes('失败') || statusMsg.includes('不存在') || statusMsg.includes('不是 Git') ? 'red' : 'green'}>
-            {statusMsg}
-          </Text>
-        </Box>
-      )}
-
-      {/* 添加模式的错误消息 */}
-      {(mode === 'add-name' || mode === 'add-path') && statusMsg && (
-        <Box marginTop={1}>
-          <Text color="red">{statusMsg}</Text>
-        </Box>
-      )}
-
-      {/* 底部提示 */}
-      <Box marginTop={1}>
-        <Text dimColor></Text>
-      </Box>
-    </Box>
-  );
-}
-
-/** 两列项目列表：名称 | 路径 */
-function ProjectList({
-  projects,
-  focusIndex,
-}: {
-  projects: ProjectConfig[];
-  focusIndex: number;
-}) {
+  // 项目名称列宽（用于对齐）
   const nameWidth = Math.max(...projects.map((p) => p.name.length), 4);
-  const rows = projects.map((p, i) => {
-    const isFocused = i === focusIndex;
-    const pointer = isFocused ? '❯' : ' ';
-    const color = isFocused ? 'cyan' : 'grey';
-    const namePadded = p.name.padEnd(nameWidth);
 
-    return (
-      <Box key={p.name}>
-        <Text color={isFocused ? 'cyan' : undefined}>
-          {pointer} {namePadded}
-        </Text>
-        <Text color={color}>{'  '}{p.path}</Text>
-      </Box>
-    );
+  // ── 键盘（仅模态模式）──────────────────────────
+  useInput((_input, key) => {
+    // 列表模式 — SettingsPage 接管键盘
+    if (mode === 'list') return;
+
+    if (key.escape) {
+      resetAddForm();
+      return;
+    }
+    // TextInput 处理回车，useInput 无需额外处理
   });
 
-  return <Box flexDirection="column">{rows}</Box>;
+  // ── 添加表单模态 ──────────────────────────────
+  if (mode === 'add-name' || mode === 'add-path') {
+    return (
+      <SettingsPage
+        title="项目管理"
+        topHint={<Text dimColor>Esc 返回</Text>}
+        bottomHint={statusMsg ? <Text color="red">{statusMsg}</Text> : undefined}
+      >
+        {mode === 'add-name' && (
+          <Box marginTop={1} flexDirection="column" borderStyle="single">
+            <Text bold>添加项目 — 第 1/2 步：输入项目名称</Text>
+            <Box marginBottom={1}>
+              <Text color="cyan">名称: </Text>
+              <TextInput
+                value={newName}
+                onChange={setNewName}
+                onSubmit={() => {
+                  if (newName.trim()) setMode('add-path');
+                }}
+                placeholder="例如: my-project"
+              />
+            </Box>
+            <Text dimColor>回车确认 / Esc 取消</Text>
+          </Box>
+        )}
+        {mode === 'add-path' && (
+          <Box marginTop={1} flexDirection="column" borderStyle="single">
+            <Text bold>添加项目 — 第 2/2 步：输入项目路径</Text>
+            <Box marginBottom={1}>
+              <Text color="cyan">路径: </Text>
+              <TextInput
+                value={newPath}
+                onChange={setNewPath}
+                onSubmit={submitAdd}
+                placeholder="例如: /home/user/projects/my-project"
+              />
+            </Box>
+            <Text dimColor>回车确认 / Esc 取消</Text>
+          </Box>
+        )}
+      </SettingsPage>
+    );
+  }
+
+  // ── 列表模式 ──────────────────────────────────
+  return (
+    <SettingsPage<ProjectConfig>
+      title="项目管理"
+      emptyText="暂无项目，按 A 添加"
+      bottomHint={
+        deleteConfirm ? (
+          <Text color="red">确认删除？再按一次 d 确认，其他键取消</Text>
+        ) : statusMsg ? (
+          <Text color={statusMsg.includes('失败') || statusMsg.includes('不存在') ? 'red' : 'green'}>
+            {statusMsg}
+          </Text>
+        ) : undefined
+      }
+      listMode={{
+        items: projects,
+        getKey: (p) => p.name,
+        renderItem: (project, _index, isFocused) => {
+          const pointer = isFocused ? '❯' : ' ';
+          const color = isFocused ? 'cyan' : 'grey';
+          const namePadded = project.name.padEnd(nameWidth);
+
+          return (
+            <Text>
+              <Text color={isFocused ? 'cyan' : undefined}>{pointer} {namePadded}</Text>
+              <Text color={color}>{'  '}{project.path}</Text>
+            </Text>
+          );
+        },
+        onSelect: (project) => {
+          onSelect(project.name, project.path);
+        },
+        onBack,
+        search: {
+          placeholder: '搜索项目…',
+          filter: (project, query) => {
+            const q = query.toLowerCase();
+            return project.name.toLowerCase().includes(q) || project.path.toLowerCase().includes(q);
+          },
+        },
+        extraKeys: [
+          {
+            key: 'a',
+            label: '添加',
+            handler: () => {
+              setMode('add-name');
+              setNewName('');
+              setNewPath('');
+              setStatusMsg('');
+              setDeleteConfirm(false);
+            },
+          },
+          {
+            key: 'd',
+            label: '删除',
+            handler: (ctx) => {
+              if (!ctx.focusedItem) return;
+              setStatusMsg('');
+              if (deleteConfirm) {
+                const updated = projects.filter((p) => p.name !== ctx.focusedItem!.name);
+                setProjects(updated);
+                save(updated);
+                setDeleteConfirm(false);
+              } else {
+                setDeleteConfirm(true);
+              }
+            },
+          },
+          {
+            key: 's',
+            label: '保存',
+            handler: () => {
+              save();
+              setDeleteConfirm(false);
+            },
+          },
+        ],
+      }}
+    />
+  );
 }

@@ -10,9 +10,16 @@ import {
   getTemplatePath,
 } from '../template/store.js';
 import { openInEditor } from '../shared/editor.js';
+import { SettingsPage } from './components/SettingsPage.js';
+
+/** 模板元数据 */
+interface TemplateMeta {
+  filename: string;
+  isDefault: boolean;
+}
 
 /** 页面模式 */
-type Mode = 'list' | 'preview' | 'delete-confirm' | 'new-filename';
+type Mode = 'list' | 'preview' | 'new-filename';
 
 interface TemplatesViewProps {
   onBack: () => void;
@@ -20,49 +27,34 @@ interface TemplatesViewProps {
 
 /**
  * 模板管理独立页面
- * 键盘操作：
- *   ↑↓  导航模板列表
- *   V   预览模板内容
- *   E   打开外部编辑器编辑选中模板（内置 default 不可编辑）
- *   N   新建模板（输入文件名后打开外部编辑器）
- *   S   设为默认
- *   D   删除选中模板
- *   R   手动刷新列表
- *   Esc 返回聊天 / 上一级
- *   B   从预览返回列表
+ * 使用 SettingsPage 列表模式提供搜索 + 分页 + 键盘导航
  */
 export function TemplatesView({ onBack }: TemplatesViewProps) {
-  const [templates, setTemplates] = useState(() => listTemplates());
-  const [focusIndex, setFocusIndex] = useState<number>(0);
+  const [templates, setTemplates] = useState<TemplateMeta[]>(() => listTemplates());
   const [mode, setMode] = useState<Mode>('list');
-  const [previewContent, setPreviewContent] = useState<string>('');
-  const [statusMsg, setStatusMsg] = useState<string>('');
-  const [newFilename, setNewFilename] = useState<string>('');
+  const [previewContent, setPreviewContent] = useState('');
+  const [selectedFilename, setSelectedFilename] = useState('');
+  const [statusMsg, setStatusMsg] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [newFilename, setNewFilename] = useState('');
 
   const refreshList = () => {
     setTemplates(listTemplates());
   };
 
-  /** 打开外部编辑器编辑当前选中模板 */
-  const handleEdit = () => {
-    const tmpl = templates[focusIndex];
-    if (!tmpl) return;
-
-    if (tmpl.filename === 'default') {
+  /** 打开外部编辑器编辑指定模板 */
+  const doEdit = (filename: string) => {
+    if (filename === 'default') {
       setStatusMsg('内置模板不可编辑，请新建自定义模板');
       return;
     }
 
-    const filePath = getTemplatePath(tmpl.filename);
+    const filePath = getTemplatePath(filename);
     openInEditor(filePath)
-      .then(() => {
-        setStatusMsg('编辑完成，请按 R 刷新列表');
-      })
-      .catch((err: unknown) => {
-        setStatusMsg(
-          `编辑失败: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      .then(() => setStatusMsg('编辑完成，请按 R 刷新'))
+      .catch((err: unknown) =>
+        setStatusMsg(`编辑失败: ${err instanceof Error ? err.message : String(err)}`),
+      );
   };
 
   /** 新建模板：确认文件名后创建并打开编辑器 */
@@ -84,38 +76,33 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
     try {
       createEmptyTemplate(trimmed);
     } catch (err) {
-      setStatusMsg(
-        `创建失败: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      setStatusMsg(`创建失败: ${err instanceof Error ? err.message : String(err)}`);
       setMode('list');
       return;
     }
 
     refreshList();
-    setStatusMsg('');
     setMode('list');
 
-    // 打开编辑器
     const filePath = getTemplatePath(trimmed);
     openInEditor(filePath)
-      .then(() => {
-        setStatusMsg(`模板 "${trimmed}" 已创建，编辑完成请按 R 刷新`);
-      })
-      .catch((err: unknown) => {
-        setStatusMsg(
-          `编辑器启动失败: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      .then(() => setStatusMsg(`模板 "${trimmed}" 已创建，编辑完成请按 R 刷新`))
+      .catch((err: unknown) =>
+        setStatusMsg(`编辑器启动失败: ${err instanceof Error ? err.message : String(err)}`),
+      );
   };
 
+  // ── 键盘（仅模态模式）──────────────────────────
   useInput((input, key) => {
-    // 新建文件名输入模式 — TextInput 处理输入，useInput 仅处理 Escape
+    // 列表模式 — SettingsPage 接管键盘
+    if (mode === 'list') return;
+
+    // 新建文件名模式 — TextInput 处理输入
     if (mode === 'new-filename') {
       if (key.escape) {
         setMode('list');
         setNewFilename('');
         setStatusMsg('');
-        return;
       }
       return;
     }
@@ -127,229 +114,215 @@ export function TemplatesView({ onBack }: TemplatesViewProps) {
         return;
       }
       if (input === 'e' || input === 'E') {
-        handleEdit();
+        doEdit(selectedFilename);
         return;
       }
-      return;
-    }
-
-    // 删除确认模式
-    if (mode === 'delete-confirm') {
-      if (input === 'y' || input === 'Y') {
-        const tmpl = templates[focusIndex];
-        if (tmpl) {
-          try {
-            deleteTemplateFn(tmpl.filename);
-            setStatusMsg(`模板 "${tmpl.filename}" 已删除`);
-            refreshList();
-            if (focusIndex >= templates.length - 1 && templates.length > 1) {
-              setFocusIndex(templates.length - 2);
-            }
-          } catch (err) {
-            setStatusMsg(`删除失败: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-        setMode('list');
-        return;
-      }
-      if (input === 'n' || input === 'N' || key.escape) {
-        setMode('list');
-        return;
-      }
-      return;
-    }
-
-    // 列表模式
-    if (key.upArrow) {
-      setFocusIndex((prev) => (prev - 1 + Math.max(templates.length, 1)) % Math.max(templates.length, 1));
-      return;
-    }
-
-    if (key.downArrow) {
-      setFocusIndex((prev) => (prev + 1) % Math.max(templates.length, 1));
-      return;
-    }
-
-    if (input === 'v' || input === 'V') {
-      const tmpl = templates[focusIndex];
-      if (!tmpl) return;
-      try {
-        const content = readTemplate(tmpl.filename);
-        setPreviewContent(
-          content || '(内置默认模板 — 核心产出、问题修复、技术优化、其他工作、下一步计划)',
-        );
-        setMode('preview');
-        setStatusMsg('');
-      } catch (err) {
-        setStatusMsg(`预览失败: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return;
-    }
-
-    if (input === 'e' || input === 'E') {
-      handleEdit();
-      return;
-    }
-
-    if (input === 'n' || input === 'N') {
-      setNewFilename('');
-      setMode('new-filename');
-      setStatusMsg('');
-      return;
-    }
-
-    if (input === 'd' || input === 'D') {
-      const tmpl = templates[focusIndex];
-      if (!tmpl) return;
-      if (tmpl.filename === 'default') {
-        setStatusMsg('内置 default 模板不可删除');
-        return;
-      }
-      setMode('delete-confirm');
-      setStatusMsg('');
-      return;
-    }
-
-    if (input === 's' || input === 'S') {
-      const tmpl = templates[focusIndex];
-      if (!tmpl) return;
-      try {
-        setDefaultFn(tmpl.filename);
-        setStatusMsg(`已将默认模板设为 "${tmpl.filename}"`);
-        refreshList();
-      } catch (err) {
-        setStatusMsg(`设置失败: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return;
-    }
-
-    if (input === 'r' || input === 'R') {
-      refreshList();
-      setStatusMsg('列表已刷新');
-      return;
-    }
-
-    if (key.escape) {
-      onBack();
       return;
     }
   });
 
-  return (
-    <Box flexDirection="column" paddingLeft={1} paddingRight={1} minHeight={24}>
-      {/* 标题栏 */}
-      <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
-        <Text bold color="black">
-          · commit-log-daily · 模板管理
-        </Text>
-      </Box>
-      <Text dimColor >
-        ↑↓ 选择  S 设为默认  R 刷新  Esc 返回
-      </Text>
-
-      {/* 预览模式 */}
-      {mode === 'preview' && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>模板预览 — {templates[focusIndex]?.filename}</Text>
-          <Box marginTop={1} flexDirection="column">
-            {previewContent.split('\n').map((line, i) => (
-              <Text key={i}>{line || ' '}</Text>
-            ))}
-          </Box>
-          <Box marginTop={1} flexDirection="row" gap={1}>
+  // ── 预览模态 ──────────────────────────────────
+  if (mode === 'preview') {
+    return (
+      <SettingsPage
+        title="模板管理"
+        bottomHint={
+          <Box flexDirection="row" gap={1}>
             <Text dimColor>E 编辑</Text>
             <Text dimColor>|</Text>
             <Text dimColor>B 或 Esc 返回列表</Text>
           </Box>
-        </Box>
-      )}
-
-      {/* 删除确认 */}
-      {mode === 'delete-confirm' && templates[focusIndex] && (
+        }
+      >
+        <Text bold>模板预览 — {selectedFilename}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Text color="yellow">
-            确认删除模板 &quot;{templates[focusIndex]!.filename}&quot;？
-          </Text>
-          <Text dimColor>Y 确认 / N 或 Esc 取消</Text>
+          {previewContent.split('\n').map((line, i) => (
+            <Text key={i}>{line || ' '}</Text>
+          ))}
         </Box>
-      )}
+      </SettingsPage>
+    );
+  }
 
-      {/* 新建文件名输入 */}
-      {mode === 'new-filename' && (
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>新建模板 — 输入文件名（不含 .md 扩展名）：</Text>
-          <Box marginTop={1} borderStyle="round" borderColor="cyan" paddingLeft={1}>
-            <TextInput
-              value={newFilename}
-              onChange={setNewFilename}
-              onSubmit={handleNewSubmit}
-              placeholder=" 输入模板名…"
-            />
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Enter 确认 / Esc 取消</Text>
-          </Box>
+  // ── 新建文件名模态 ────────────────────────────
+  if (mode === 'new-filename') {
+    return (
+      <SettingsPage title="模板管理">
+        <Text bold>新建模板 — 输入文件名（不含 .md 扩展名）：</Text>
+        <Box marginTop={1} borderStyle="round" borderColor="cyan" paddingLeft={1}>
+          <TextInput
+            value={newFilename}
+            onChange={setNewFilename}
+            onSubmit={handleNewSubmit}
+            placeholder=" 输入模板名…"
+          />
         </Box>
-      )}
-
-      {/* 模板列表 */}
-      {mode === 'list' && templates.length === 0 && (
-        <Box marginTop={1} flexGrow={1}>
-          <Text dimColor>
-            {' '} 暂无模板文件。按 N 新建，或在 ~/.commit-log-daily/templates/ 下创建 .md 文件。
-          </Text>
-        </Box>
-      )}
-
-      {mode === 'list' && (
-        <Box flexGrow={1} marginTop={1} flexDirection="column">
-          {templates.map((t, i) => {
-            const isFocused = i === focusIndex;
-            const pointer = isFocused ? '❯' : ' ';
-            const color = isFocused ? 'cyan' : undefined;
-            const isBuiltin = t.filename === 'default';
-
-            return (
-              <Box key={t.filename}>
-                <Text color={color}>
-                  {pointer} {t.filename}
-                  {t.isDefault ? ' [当前]' : ''}
-                </Text>
-                {isBuiltin && (
-                  <Box marginLeft={1} paddingX={1} backgroundColor={'white'}>
-                    <Text color={'black'}>内置</Text>
-                  </Box>
-                )}
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-
-      {/* 常用操作提示 */}
-      <Box marginTop={1}>
-        <Text dimColor>
-          V 预览  E 编辑  N 新建   D 删除
-        </Text>
-      </Box>
-
-
-      {/* 状态消息 */}
-      {statusMsg && mode !== 'delete-confirm' && (
         <Box marginTop={1}>
+          <Text dimColor>Enter 确认 / Esc 取消</Text>
+        </Box>
+      </SettingsPage>
+    );
+  }
+
+  // ── 列表模式 ──────────────────────────────────
+  return (
+    <SettingsPage<TemplateMeta>
+      title="模板管理"
+      emptyText="暂无模板文件。按 N 新建，或在 ~/.commit-log-daily/templates/ 下创建 .md 文件。"
+      bottomHint={
+        deleteConfirm ? (
+          <Text color="red">确认删除？再按一次 d 确认，其他键取消</Text>
+        ) : statusMsg ? (
           <Text
             color={
               statusMsg.includes('失败') ||
-                statusMsg.includes('不可') ||
-                statusMsg.includes('不能')
+              statusMsg.includes('不可') ||
+              statusMsg.includes('不能')
                 ? 'red'
                 : 'green'
             }
           >
             {statusMsg}
           </Text>
-        </Box>
-      )}
-    </Box>
+        ) : undefined
+      }
+      listMode={{
+        items: templates,
+        getKey: (t) => t.filename,
+        renderItem: (tmpl, _index, isFocused) => {
+          const pointer = isFocused ? '❯' : ' ';
+          const color = isFocused ? 'cyan' : undefined;
+          const isBuiltin = tmpl.filename === 'default';
+
+          return (
+            <Text>
+              <Text color={color}>
+                {pointer} {tmpl.filename}
+                {tmpl.isDefault ? ' [当前]' : ''}
+              </Text>
+              {isBuiltin && (
+                <Text>
+                  {' · '}
+                  <Text dimColor>内置</Text>
+                </Text>
+              )}
+            </Text>
+          );
+        },
+        onSelect: (tmpl) => {
+          // Enter 预览模板内容
+          try {
+            const content = readTemplate(tmpl.filename);
+            setPreviewContent(
+              content || '(内置默认模板 — 核心产出、问题修复、技术优化、其他工作、下一步计划)',
+            );
+            setSelectedFilename(tmpl.filename);
+            setMode('preview');
+            setStatusMsg('');
+            setDeleteConfirm(false);
+          } catch (err) {
+            setStatusMsg(`预览失败: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        },
+        onBack,
+        search: {
+          placeholder: '搜索模板…',
+          filter: (tmpl, query) => tmpl.filename.toLowerCase().includes(query.toLowerCase()),
+        },
+        extraKeys: [
+          {
+            key: 'v',
+            label: '预览',
+            handler: (ctx) => {
+              const tmpl = ctx.focusedItem;
+              if (!tmpl) return;
+              try {
+                const content = readTemplate(tmpl.filename);
+                setPreviewContent(
+                  content || '(内置默认模板 — 核心产出、问题修复、技术优化、其他工作、下一步计划)',
+                );
+                setSelectedFilename(tmpl.filename);
+                setMode('preview');
+                setStatusMsg('');
+                setDeleteConfirm(false);
+              } catch (err) {
+                setStatusMsg(`预览失败: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
+          },
+          {
+            key: 'e',
+            label: '编辑',
+            handler: (ctx) => {
+              const tmpl = ctx.focusedItem;
+              if (!tmpl) return;
+              setDeleteConfirm(false);
+              doEdit(tmpl.filename);
+            },
+          },
+          {
+            key: 'n',
+            label: '新建',
+            handler: () => {
+              setNewFilename('');
+              setMode('new-filename');
+              setStatusMsg('');
+              setDeleteConfirm(false);
+            },
+          },
+          {
+            key: 'd',
+            label: '删除',
+            handler: (ctx) => {
+              const tmpl = ctx.focusedItem;
+              if (!tmpl) return;
+              if (tmpl.filename === 'default') {
+                setStatusMsg('内置 default 模板不可删除');
+                setDeleteConfirm(false);
+                return;
+              }
+              setStatusMsg('');
+              if (deleteConfirm) {
+                try {
+                  deleteTemplateFn(tmpl.filename);
+                  setStatusMsg(`模板 "${tmpl.filename}" 已删除`);
+                  refreshList();
+                } catch (err) {
+                  setStatusMsg(`删除失败: ${err instanceof Error ? err.message : String(err)}`);
+                }
+                setDeleteConfirm(false);
+              } else {
+                setDeleteConfirm(true);
+              }
+            },
+          },
+          {
+            key: 's',
+            label: '设为默认',
+            handler: (ctx) => {
+              const tmpl = ctx.focusedItem;
+              if (!tmpl) return;
+              try {
+                setDefaultFn(tmpl.filename);
+                setStatusMsg(`已将默认模板设为 "${tmpl.filename}"`);
+                setDeleteConfirm(false);
+                refreshList();
+              } catch (err) {
+                setStatusMsg(`设置失败: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
+          },
+          {
+            key: 'r',
+            label: '刷新',
+            handler: () => {
+              refreshList();
+              setStatusMsg('列表已刷新');
+              setDeleteConfirm(false);
+            },
+          },
+        ],
+      }}
+    />
   );
 }
