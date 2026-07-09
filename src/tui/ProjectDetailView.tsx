@@ -22,6 +22,9 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+/** 一天的毫秒数 */
+const MS_PER_DAY = 86400000;
+
 /** 星期标签（周一/周三/周五标注） */
 const DAY_LABELS: Record<number, string> = {
   1: 'Mon',
@@ -53,6 +56,7 @@ export function ProjectDetailView({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setStats(null);
 
     getProjectStats(projectPath, range)
       .then((result) => {
@@ -116,7 +120,7 @@ export function ProjectDetailView({
       )}
 
       {/* 正常数据 */}
-      {stats && !loading && (
+      {stats && !loading && !error && (
         <>
           {stats.totalCommits === 0 ? (
             <Box marginTop={1}>
@@ -234,7 +238,7 @@ function HeatmapGrid({ stats, range }: HeatmapGridProps) {
   gridEnd.setDate(gridEnd.getDate() + daysToSunday);
 
   // 总周数
-  const totalDays = Math.round((gridEnd.getTime() - gridStart.getTime()) / 86400000);
+  const totalDays = Math.round((gridEnd.getTime() - gridStart.getTime()) / MS_PER_DAY);
   const totalWeeks = Math.ceil(totalDays / 7);
 
   // 构建 7 行 x totalWeeks 列的字符网格
