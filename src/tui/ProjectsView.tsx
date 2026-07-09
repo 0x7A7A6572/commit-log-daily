@@ -12,6 +12,8 @@ type Mode = 'list' | 'add-name' | 'add-path' | 'delete-confirm';
 interface ProjectsViewProps {
   /** 返回聊天页的回调 */
   onBack: () => void;
+  /** 为选中的项目生成周报（回到聊天页并发送消息） */
+  onGenerateReport: (project: ProjectConfig) => void;
 }
 
 const modelStyle: BoxProps = {
@@ -28,9 +30,11 @@ const modelStyle: BoxProps = {
  *   ↑↓  导航项目列表
  *   A   添加项目
  *   D   删除选中项目
+ *   G   为选中项目生成本周周报
+ *   S   保存
  *   Esc 返回聊天
  */
-export function ProjectsView({ onBack }: ProjectsViewProps) {
+export function ProjectsView({ onBack, onGenerateReport }: ProjectsViewProps) {
   const [projects, setProjects] = useState<ProjectConfig[]>(() => readConfig().projects);
   const [focusIndex, setFocusIndex] = useState<number>(0);
   const [mode, setMode] = useState<Mode>('list');
@@ -126,6 +130,15 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
       return;
     }
 
+    if (input === 'g' || input === 'G') {
+      if (projects.length === 0) {
+        setStatusMsg('没有项目可生成周报');
+        return;
+      }
+      onGenerateReport(projects[focusIndex]!);
+      return;
+    }
+
     if (input === 's' || input === 'S') {
       save();
       return;
@@ -193,7 +206,7 @@ export function ProjectsView({ onBack }: ProjectsViewProps) {
         </Text>
       </Box>
       <Text dimColor>
-        ↑↓ 选择  A 添加  D 删除  S 保存  Esc 返回
+        ↑↓ 选择  A 添加  D 删除  G 生成周报  S 保存  Esc 返回
       </Text>
 
 
