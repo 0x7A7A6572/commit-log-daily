@@ -1,4 +1,4 @@
-import { Annotation, messagesStateReducer, StateGraph, START, END } from '@langchain/langgraph';
+import { Annotation, messagesStateReducer, StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
 import { ToolNode, toolsCondition } from '@langchain/langgraph/prebuilt';
 import { SystemMessage, AIMessage, trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
@@ -34,12 +34,38 @@ async function buildTrimmedMessages(
     new SystemMessage(phaseModel.systemPrompt),
     ...conversationMessages,
   ];
-  return trimMessages(systemMessages, {
+  const trimmed = await trimMessages(systemMessages, {
     maxTokens: phaseModel.maxContextTokens,
     tokenCounter: phaseModel.model,
     strategy: 'last',
     startOn: 'human',
     includeSystem: true,
+  });
+
+  // 裁剪后修复：移除没有对应 ToolMessage 的 AIMessage(tool_calls)
+  // trimMessages 按 token 计数裁剪，可能保留 AIMessage 但丢弃其 ToolMessage，导致 API 400 错误
+  return fixOrphanedToolCalls(trimmed);
+}
+
+/**
+ * 确保每条带 tool_calls 的 AIMessage 都有对应的 ToolMessage 跟随
+ * 如果裁剪破坏了配对，移除孤立的 AIMessage(tool_calls)
+ */
+function fixOrphanedToolCalls(messages: BaseMessage[]): BaseMessage[] {
+  const toolCallIdsWithResult = new Set<string>();
+  for (const msg of messages) {
+    if (msg.getType() === 'tool') {
+      const toolMsg = msg as unknown as { tool_call_id: string };
+      if (toolMsg.tool_call_id) {
+        toolCallIdsWithResult.add(toolMsg.tool_call_id);
+      }
+    }
+  }
+  return messages.filter((msg) => {
+    if (msg instanceof AIMessage && msg.tool_calls && msg.tool_calls.length > 0) {
+      return msg.tool_calls.every((tc) => tc.id ? toolCallIdsWithResult.has(tc.id) : false);
+    }
+    return true;
   });
 }
 
@@ -139,6 +165,8 @@ export const agentGraph = new StateGraph(AgentStateAnnotation)
   ])
   .addEdge('generateTools', 'generateLLM')
 
-  .compile();
+  .compile({
+     checkpointer: new MemorySaver() 
+  });
 
 export { AgentStateAnnotation };

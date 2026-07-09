@@ -5,10 +5,11 @@ import { createEmptyContext } from '../agent/session.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
 import { hasTaskCompleteMarker, stripTaskCompleteMarker } from '../agent/base.js';
 import { agentGraph } from '../agent/graph.js';
-import type { ToolCallDisplay, ChatMessage } from './ChatView.js';
+import type { ToolCallDisplay, ChatMessage, PendingApproval } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
 import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
 import { readConfig } from '../config/store.js';
+import { Command, isInterrupted, INTERRUPT } from '@langchain/langgraph';
 
 /** 会话 Hook 的返回值 */
 interface SessionState {
@@ -19,6 +20,10 @@ interface SessionState {
   tokenUsage: SessionContext['tokenUsage'];
   handleSubmit: (text: string) => void;
   loadHistorySession: (sessionId: string) => void;
+  /** 待用户审批的操作（execTool 安全确认） */
+  pendingApproval: PendingApproval | null;
+  /** 用户审批决策回调 */
+  handleApproval: (decision: 'approve' | 'reject') => void;
 }
 
 /**
@@ -226,9 +231,17 @@ export function useSession(): SessionState {
   const [langMessages, setLangMessages] = useState<BaseMessage[]>([]);
   const [phase, setPhase] = useState<AgentPhase>('collect');
   const [isWaiting, setIsWaiting] = useState<boolean>(false);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const contextRef = useRef<SessionContext>(createEmptyContext());
   const currentSessionIdRef = useRef<string | null>(null);
   const pendingTaskResetRef = useRef<boolean>(false);
+  /** 保存当前 stream 的 config（含 thread_id），供中断恢复时复用 */
+  const streamConfigRef = useRef<{ configurable: { thread_id: string } } | null>(null);
+  /** 保存中断前的用户消息 seq，供恢复后持久化使用 */
+  const interruptedStateRef = useRef<{
+    userSeq: number;
+    conversationMessages: BaseMessage[];
+  } | null>(null);
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -285,12 +298,20 @@ export function useSession(): SessionState {
 
         // 流式运行 Agent 图，streamMode: "values" 每个超步后 yield 完整状态快照
         // 实现逐步渲染——用户看到工具调用逐条出现，而非一次性蹦出
+        // 使用 thread_id 支持 checkpointer 的中断/恢复
+        const threadId = currentSessionIdRef.current ?? `thread-${Date.now()}`;
+        const streamConfig = {
+          streamMode: "values" as const,
+          recursionLimit: 20,
+          configurable: { thread_id: threadId },
+        };
+        streamConfigRef.current = streamConfig;
         const stream = await agentGraph.stream(
           {
             messages: [...conversationMessages, userMsg],
             phase: currentPhase,
           },
-          { streamMode: "values", recursionLimit: 20 },
+          streamConfig,
         );
 
         let resultMessages: BaseMessage[] = [];
@@ -299,10 +320,24 @@ export function useSession(): SessionState {
         const countedTokenIds = new Set<string>();
 
         for await (const chunk of stream) {
-          // chunk 类型: { messages: BaseMessage[]; phase: AgentPhase }
+          // chunk 类型: { messages: BaseMessage[]; phase: AgentPhase } 或含 __interrupt__
           const state = chunk as unknown as { messages: BaseMessage[]; phase: AgentPhase };
           resultMessages = state.messages;
           newPhase = state.phase;
+
+          // 检测中断：execTool 的安全审批需要用户确认
+          if (isInterrupted(state)) {
+            const interruptList = (state as Record<string, unknown>)[INTERRUPT] as Array<{ value: PendingApproval }> | undefined;
+            const interruptData = interruptList?.[0];
+            if (interruptData?.value && interruptData.value.command) {
+              setPendingApproval(interruptData.value);
+              interruptedStateRef.current = { userSeq, conversationMessages };
+              // 不持久化、不设 isWaiting=false — 等待用户审批
+              return;
+            }
+            // 非审批类中断：跳过，继续处理
+            continue;
+          }
 
           // 仅对未累计过的 AIMessage 累加 token（同一消息可能在多个 chunk 中出现）
           for (const msg of resultMessages) {
@@ -373,6 +408,104 @@ export function useSession(): SessionState {
     [langMessages, phase],
   );
 
+  /** 处理安全审批：用户确认/拒绝后恢复图执行 */
+  const handleApproval = useCallback(
+    async (decision: 'approve' | 'reject') => {
+      setPendingApproval(null);
+      const config = streamConfigRef.current;
+      const interrupted = interruptedStateRef.current;
+      if (!config || !interrupted) return;
+
+      try {
+        // 用 Command(resume) 恢复被 interrupt() 暂停的图
+        const stream = await agentGraph.stream(
+          new Command({ resume: { decision } }),
+          config,
+        );
+
+        let resultMessages: BaseMessage[] = [];
+        let newPhase: AgentPhase = 'collect';
+        const countedTokenIds = new Set<string>();
+
+        for await (const chunk of stream) {
+          const state = chunk as unknown as { messages: BaseMessage[]; phase: AgentPhase };
+
+          // 可能再次中断（多个 execTool 调用）
+          if (isInterrupted(state)) {
+            const interruptList = (state as Record<string, unknown>)[INTERRUPT] as Array<{ value: PendingApproval }> | undefined;
+            const interruptData = interruptList?.[0];
+            if (interruptData?.value && interruptData.value.command) {
+              setPendingApproval(interruptData.value);
+              // 更新中断状态，保存最新消息
+              interruptedStateRef.current = {
+                userSeq: interrupted.userSeq,
+                conversationMessages: interrupted.conversationMessages,
+              };
+              return;
+            }
+            continue;
+          }
+
+          resultMessages = state.messages;
+          newPhase = state.phase;
+
+          for (const msg of resultMessages) {
+            if (
+              msg instanceof AIMessage &&
+              msg.usage_metadata?.input_tokens != null &&
+              msg.id &&
+              !countedTokenIds.has(msg.id)
+            ) {
+              countedTokenIds.add(msg.id);
+              contextRef.current.tokenUsage.input_tokens += msg.usage_metadata.input_tokens;
+              contextRef.current.tokenUsage.output_tokens += msg.usage_metadata.output_tokens ?? 0;
+            }
+          }
+
+          setLangMessages(resultMessages);
+          setPhase(newPhase);
+        }
+
+        // 恢复后完成：检测任务标记 + 持久化
+        const resultAiMessages = resultMessages.filter(
+          (m: BaseMessage) => m.getType() === 'ai',
+        );
+        const lastAiMsg = resultAiMessages[resultAiMessages.length - 1];
+        if (lastAiMsg) {
+          const aiContent = typeof lastAiMsg.content === 'string' ? lastAiMsg.content : '';
+          if (hasTaskCompleteMarker(aiContent)) {
+            pendingTaskResetRef.current = true;
+            lastAiMsg.content = stripTaskCompleteMarker(aiContent);
+          }
+        }
+
+        // 持久化：只存中断之后新增的消息
+        const newMessages = resultMessages.slice(interrupted.conversationMessages.length);
+        let msgSeq = interrupted.userSeq + 1;
+        for (const msg of newMessages) {
+          const msgType = msg.getType();
+          if (msgType === 'ai' || msgType === 'tool') {
+            const role = msgType === 'ai' ? 'ai' as const : 'tool' as const;
+            saveMessage(currentSessionIdRef.current!, role, serializeMessage(msg), msgSeq++);
+          }
+        }
+
+        saveContext(currentSessionIdRef.current!, newPhase, contextRef.current);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        setLangMessages((prev: BaseMessage[]) => [
+          ...prev,
+          new AIMessage(`执行出错: ${errMsg}`),
+        ]);
+      } finally {
+        setIsWaiting(false);
+        streamConfigRef.current = null;
+        interruptedStateRef.current = null;
+      }
+    },
+    [],
+  );
+
   /** 从历史恢复会话 */
   const loadHistorySession = useCallback(
     (sessionId: string) => {
@@ -416,5 +549,7 @@ export function useSession(): SessionState {
     tokenUsage: contextRef.current.tokenUsage,
     handleSubmit,
     loadHistorySession,
+    pendingApproval,
+    handleApproval,
   };
 }

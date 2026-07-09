@@ -31,6 +31,13 @@ export interface ChatMessage {
   tokenUsage?: { input_tokens: number; output_tokens: number };
 }
 
+/** 待审批的操作（来自 execTool 的 interrupt） */
+export interface PendingApproval {
+  command: string;
+  args: string[];
+  message: string;
+}
+
 /** 斜杠命令定义 */
 interface SlashCommand {
   name: string;
@@ -65,6 +72,10 @@ interface ChatViewProps {
   isWaiting: boolean;
   /** 斜杠命令选中后的回调 */
   onCommand: (action: string) => void;
+  /** 待用户审批的操作（execTool 中断时弹出确认） */
+  pendingApproval: PendingApproval | null;
+  /** 用户审批决策回调 */
+  onApproval: (decision: 'approve' | 'reject') => void;
 }
 
 /** 聊天界面视图 */
@@ -74,6 +85,8 @@ export function ChatView({
   onSubmit,
   isWaiting,
   onCommand,
+  pendingApproval,
+  onApproval,
 }: ChatViewProps) {
   const [input, setInput] = useState("");
 
@@ -185,7 +198,7 @@ export function ChatView({
     <Box flexDirection="column">
       {/* 消息区域 */}
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
-        {messages.length === 0 && (
+        {(
           <Box paddingLeft={2} paddingTop={1} flexDirection="column">
             <Text>{LOGO}</Text>
             <Text dimColor>{WELCOME_GUIDE}</Text>
@@ -201,7 +214,7 @@ export function ChatView({
         )}
       </Box>
 
-      {/* 底部区域：斜杠命令菜单 + 输入框，flexShrink=0 不被挤压 */}
+      {/* 底部区域：斜杠命令菜单 + 审批确认 + 输入框，flexShrink=0 不被挤压 */}
       <Box flexDirection="column" flexShrink={0} marginTop={0}>
         {/* 斜杠命令菜单 — 紧贴输入框上方 */}
         {showCommands && (
@@ -237,6 +250,11 @@ export function ChatView({
               );
             })}
           </Box>
+        )}
+
+        {/* 安全审批确认横幅 */}
+        {pendingApproval && (
+          <ApprovalBanner approval={pendingApproval} onApproval={onApproval} />
         )}
 
         {/* 输入框 */}
@@ -473,6 +491,70 @@ function truncateResult(result: string, maxLen = 500): string {
   if (result.length <= maxLen) return result;
   return (
     result.slice(0, maxLen) + `...（共 ${result.length} 字，已截断）`
+  );
+}
+
+/** 安全审批确认横幅 — 黄色警告背景，Enter 确认 / Esc 拒绝 */
+function ApprovalBanner({
+  approval,
+  onApproval,
+}: {
+  approval: PendingApproval;
+  onApproval: (decision: 'approve' | 'reject') => void;
+}): React.ReactElement {
+  useInput((_input, key) => {
+    if (key.return) {
+      onApproval('approve');
+      return;
+    }
+    if (key.escape) {
+      onApproval('reject');
+      return;
+    }
+    // Y/y 确认，N/n 拒绝
+    if (_input.toLowerCase() === 'y') {
+      onApproval('approve');
+      return;
+    }
+    if (_input.toLowerCase() === 'n') {
+      onApproval('reject');
+      return;
+    }
+  });
+
+  const argsStr = approval.args.length > 0 ? ` ${approval.args.join(' ')}` : '';
+
+  return (
+    <Box
+      flexDirection="column"
+      marginLeft={1}
+      marginRight={1}
+      marginBottom={0}
+      paddingLeft={1}
+      paddingRight={1}
+      paddingTop={0}
+      paddingBottom={0}
+      borderStyle="round"
+      borderColor="yellow"
+    >
+      <Box borderBottom>
+        <Text bold color="yellow">
+          ⚠️ 安全审批
+        </Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text>{approval.message}</Text>
+      </Box>
+      <Box>
+        <Text bold>
+          将执行: {approval.command}{argsStr}
+        </Text>
+      </Box>
+      <Box marginTop={1} gap={2}>
+        <Text color="green">Enter / Y — 确认执行</Text>
+        <Text color="red">Esc / N — 拒绝</Text>
+      </Box>
+    </Box>
   );
 }
 

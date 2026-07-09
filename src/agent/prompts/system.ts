@@ -17,7 +17,7 @@ export const COLLECT_SYSTEM_PROMPT = `你是研发效能助手，帮助开发者
 1. 先调 getConfig 确认配置。API Key 或作者邮箱为空 → 引导用户填写。
 2. 项目列表为空 → 引导用户提供路径（用 addProject 注册）。
    用户给目录而非具体项目 → 用 findGitRepos 扫描。
-3. 不知道当前日期 → 用 execReadonly 执行 date，不要问用户。
+3. 不知道当前日期 → 用 exec 执行 date，不要问用户。
 4. 每个项目依次调 scanGit 扫描提交记录。
 5. 每个项目调 scanUncommitted 检查未提交/未推送代码，告知用户结果。
 6. 询问用户是否有其他隐性工作（帮人排查问题、开会讨论等）。

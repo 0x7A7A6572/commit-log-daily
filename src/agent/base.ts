@@ -9,7 +9,7 @@ import { listProjectsTool, addProjectTool, removeProjectTool } from './tools/pro
 import { getConfigTool, setConfigTool } from './tools/config-tool.js';
 import { writeFileTool } from './tools/exportFile.js';
 import { findGitReposTool } from './tools/findGitRepos.js';
-import { execReadonlyTool } from './tools/execReadonly.js';
+import { execTool } from './tools/exec.js';
 import {
   listTemplatesTool,
   readTemplateTool,
@@ -32,7 +32,7 @@ export const COLLECT_TOOLS = [
   getConfigTool,
   setConfigTool,
   findGitReposTool,
-  execReadonlyTool,
+  execTool,
   listTemplatesTool,
   readTemplateTool,
   createTemplateTool,

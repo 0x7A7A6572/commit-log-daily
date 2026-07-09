@@ -37,3 +37,14 @@ export function createEmptyContext(): SessionContext {
     tokenUsage: { input_tokens: 0, output_tokens: 0 },
   };
 }
+
+
+/** 命令安全等级 */
+export enum SafetyLevel {
+  /** 绝对禁止 */
+  Blocked = 999,
+  /** 危险 - 可能有副作用，需要用户确认 */
+  Warn = 1,
+  /** 安全 */
+  Safe = 0
+}

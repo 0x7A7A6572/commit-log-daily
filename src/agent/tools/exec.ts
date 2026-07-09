@@ -3,6 +3,18 @@ import { existsSync } from 'node:fs';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { readConfig } from '../../config/store.js';
+import { SafetyLevel } from '../types.js';
+import { evaluateSafety, safetyChannelCheck } from '../safety-llm.js';
+import { interrupt } from '@langchain/langgraph';
+
+
+
+/** 硬性阻止列表 — 始终生效，与 safeMode 无关，防止绕过安全机制 */
+const HARD_BLOCKED_COMMANDS: string[] = [
+  'powershell', 'pwsh', 'cmd',     // Windows 命令解释器
+  'wsl',                            // WSL 桥接
+  // 'python', 'python3', 'node',     // 脚本运行时（防止绕过）
+];
 
 /** 只读系统命令白名单 */
 const ALLOWED_COMMANDS: string[] = [
@@ -22,7 +34,6 @@ const ALLOWED_COMMANDS: string[] = [
   'id',        // 用户/组 ID
   'printenv',  // 打印环境变量
 ];
-
 /**
  * 安全执行系统命令
  * 使用 spawn + bash -c "$@" 保持参数边界：
@@ -32,6 +43,14 @@ const ALLOWED_COMMANDS: string[] = [
 async function safeExec(command: string, args: string[]): Promise<string> {
   const config = readConfig();
 
+  // 硬性阻止：命令解释器和脚本运行时始终禁止，与 safeMode 无关
+  const normalizedCmd = command.toLowerCase();
+  if (HARD_BLOCKED_COMMANDS.includes(normalizedCmd)) {
+    throw new Error(
+      `禁止执行 "${command}"，此命令已被硬性阻止。仅支持通过 Git Bash 执行系统命令。`,
+    );
+  }
+
   // 安全模式开启时校验命令白名单
   if (config.safety.safeMode) {
     if (!ALLOWED_COMMANDS.includes(command)) {
@@ -40,6 +59,28 @@ async function safeExec(command: string, args: string[]): Promise<string> {
       );
     }
   }
+
+  // 命令安全检查
+  await safetyChannelCheck(command, args, {
+    [SafetyLevel.Blocked]: () => { throw new Error(`命令 "${command}" 不安全，拒绝执行。`) },
+    [SafetyLevel.Warn]: async () => {
+      console.warn(`命令 "${command}" 可能不安全，请谨慎使用。`);
+      // 通知前端视图弹出用户确认
+      const approval = interrupt({
+        action: "request_approval",
+        command: command,
+        args: args,
+        safetyLevel: SafetyLevel.Warn,
+        message: `安全等级: ${SafetyLevel[SafetyLevel.Warn]}\n即将执行破坏性命令: ${command}，是否继续？`,
+      });
+      // 💡 恢复执行时，interrupt() 会返回用户的决策
+      // 如果用户拒绝，直接返回提示，不执行命令
+      if (approval?.decision === "reject") {
+        throw new Error(`用户已拒绝执行该危险命令。`);
+      }
+    },
+    [SafetyLevel.Safe]: async () => {},
+  });
 
   const bashPath = getBashPath();
 
@@ -97,28 +138,30 @@ function getBashPath(): string {
   return '/bin/bash';
 }
 
-/** 受控的只读系统命令执行工具 */
-export const execReadonlyTool = tool(
+
+/** 系统命令执行工具 */
+export const execTool = tool(
   async ({ command, args }) => {
-    const config = readConfig();
-    // 安全模式开启时做二次校验（Zod refine 已做第一轮，此处为安全兜底）
-    if (config.safety.safeMode && !ALLOWED_COMMANDS.includes(command)) {
-      throw new Error(`不允许执行 "${command}"`);
-    }
     const result = await safeExec(command, args ?? []);
     return result.trim() || '(无输出)';
   },
   {
-    name: 'execReadonly',
+    name: 'execTool',
     description:
-      `安全执行只读系统命令，帮助获取环境和系统信息。` +
-      `支持的命令: ${ALLOWED_COMMANDS.join(', ')}。` +
-      `所有命令通过 Git Bash (bash -c) 只读执行，无任何副作用。` +
-      `参数以数组传入，如 date 用 ["+%Y-%m-%d"] 格式化输出。` +
-      `常用示例: 获取当前日期 date ["+%Y-%m-%d"]、获取用户 whoami []、列出目录 ls ["-la", "/some/path"]`,
+      `
+# 工具能力
+所有命令通过 Git Bash (bash -c) 执行。
+参数以数组传入，如 date ["+%Y-%m-%d"] , whoami [] , ls ["-la", "/some/path"]。
+
+# 重要约束
+安全模式下:
+ - 安全执行只读系统命令，帮助获取环境和系统信息以及文件等。
+ - 支持的命令: ${ALLOWED_COMMANDS.join(', ')}。
+非安全模式下:
+ - 可执行任意命令, 但是在执行破坏性命令时必须用户确认。`,
     schema: z.object({
-      command: z.string().describe(`要执行的命令名称，仅支持: ${ALLOWED_COMMANDS.join(', ')}`),
-      args: z.array(z.string()).optional().describe('命令参数，如 date 可用 ["+%Y-%m-%d"] 获取格式化日期'),
-    }),
+      command: z.string().describe(`要执行的命令名称`),
+      args: z.array(z.string()).optional().describe('命令参数，Array类型'),
+    })
   },
 );
