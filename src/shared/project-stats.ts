@@ -94,7 +94,10 @@ function computeStreaks(sortedDates: string[]): {
   for (let i = 0; ; i++) {
     const checkDate = new Date(today);
     checkDate.setDate(today.getDate() - i);
-    const checkStr = checkDate.toISOString().slice(0, 10);
+    const y = checkDate.getFullYear();
+    const m = String(checkDate.getMonth() + 1).padStart(2, '0');
+    const d = String(checkDate.getDate()).padStart(2, '0');
+    const checkStr = `${y}-${m}-${d}`;
     if (dateSet.has(checkStr)) {
       currentStreak++;
     } else {
@@ -128,7 +131,7 @@ function parseShortlog(output: string): Array<{ name: string; count: number }> {
       return { count: parseInt(match[1]!, 10), name: match[2]! };
     }
     return { count: 0, name: line.trim() };
-  });
+  }).filter(entry => entry.count > 0);
 }
 
 /** 执行 git for-each-ref 获取本地分支列表 */
