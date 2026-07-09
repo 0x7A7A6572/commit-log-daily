@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Box, Text, useInput, Static } from "ink";
 import TextInput from "ink-text-input";
 import { LoadingView } from "./components/Loading.js";
 import { readConfig } from "../config/store.js";
@@ -171,32 +171,59 @@ export function ChatView({
     visibleSlice.start + MENU_VISIBLE_MAX,
   );
 
+  // 稳定消息缓存：用 ref 累积已稳定的消息，只增不减
+  // Static 不参与 Ink 每帧重绘 → 终端 scrollback 不会被新帧冲掉
+  const stableRef = useRef<ChatMessage[]>([]);
+  const [, bumpStable] = useState(0);
+
+  useEffect(() => {
+    // 计算 stableCount：streaming 期间最后一条 assistant 之外的都算稳定
+    let stableCount: number;
+    if (messages.length === 0) {
+      stableCount = 0;
+    } else if (!isWaiting) {
+      // 不在 streaming，全部稳定
+      stableCount = messages.length;
+    } else {
+      // streaming 中：最后一条 assistant 是活的，其他已稳定
+      const last = messages[messages.length - 1]!;
+      stableCount =
+        last.role === 'assistant' ? messages.length - 1 : messages.length;
+    }
+
+    // 追加新稳定的消息到 ref
+    if (stableRef.current.length < stableCount) {
+      const newStable = messages.slice(
+        stableRef.current.length,
+        stableCount,
+      );
+      stableRef.current = [...stableRef.current, ...newStable];
+      bumpStable((n) => n + 1);
+    }
+  }, [messages, isWaiting]);
+
+  // 活消息：streaming 期间持续变化的那一条 assistant
+  const liveMessage = useMemo(() => {
+    if (!isWaiting || messages.length === 0) return undefined;
+    const last = messages[messages.length - 1]!;
+    return last.role === 'assistant' ? last : undefined;
+  }, [messages, isWaiting]);
+
   return (
     <Box flexDirection="column">
-      {/* 标题栏 */}
-      {/* <Box
-        paddingLeft={1}
-        paddingRight={1}
-        borderStyle="single"
-        borderColor="cyan"
-      >
-        <Text bold color="cyan">
-          commit-log-daily
-        </Text>
-        <Text dimColor> · Agent</Text>
-        <Text dimColor> · / 打开命令 · 滚轮翻看 · Ctrl+C 退出</Text>
-      </Box> */}
-
-      {/* 消息区域 — 渲染全部消息，溢出部分由终端原生 scrollback 处理 */}
+      {/* 消息区域 — 稳定消息用 Static 锚定，活消息单独渲染 */}
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
-        {messages.length === 0 && (
+        {stableRef.current.length === 0 && !liveMessage && (
           <Box paddingLeft={2} paddingTop={1}>
             <Text dimColor>发送消息开始对话…</Text>
           </Box>
         )}
-        {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} />
-        ))}
+        <Static items={stableRef.current}>
+          {(msg: ChatMessage) => (
+            <MessageBubble message={msg} />
+          )}
+        </Static>
+        {liveMessage && <MessageBubble message={liveMessage} />}
         {isWaiting && (
           <Box paddingLeft={2} paddingTop={1}>
             <LoadingView loadingText="thinking..." color="yellow" loading />
@@ -281,12 +308,12 @@ export function ChatView({
   );
 }
 
-/** 单条消息气泡 — Claude 风格 */
-function MessageBubble({
+/** 单条消息气泡 — Claude 风格，memo 防止流式渲染时非最后一条消息重绘 */
+const MessageBubble = React.memo(function MessageBubble({
   message,
 }: {
   message: ChatMessage;
-}): React.ReactElement {
+}) {
   if (message.role === "system") {
     return (
       <Box
@@ -305,7 +332,7 @@ function MessageBubble({
   }
 
   return <AssistantBubble message={message} />;
-}
+});
 
 /** 用户消息 — 右对齐，绿色边框 */
 function UserBubble({ content }: { content: string }): React.ReactElement {
@@ -364,36 +391,33 @@ function AssistantBubble({
           {hasReasoning && (
             <Box flexDirection="column" marginBottom={hasToolCalls || hasContent ? 1 : 0}>
               <Text color="yellow" dimColor>
-                🧠 思考过程：
+                ✱ 思考过程：
               </Text>
               <Text dimColor>{truncateReasoning(reasoning!)}</Text>
             </Box>
           )}
 
-          {/* 工具调用 */}
-          {hasToolCalls &&
-            toolCalls!.map((tc, idx) => (
-              <Box
-                key={tc.id}
-                flexDirection="column"
-                marginBottom={
-                  idx < toolCalls!.length - 1 || hasContent ? 1 : 0
-                }
-              >
-                <Text color="cyan">🔧 {tc.name}</Text>
-                <Text dimColor>   📥 {formatArgs(tc.args)}</Text>
+          {/* 工具调用 — 仅渲染最新一条，显示总数 */}
+          {hasToolCalls && (() => {
+            const total = toolCalls!.length;
+            const tc = toolCalls![total - 1]!;
+            return (
+              <Box flexDirection="column" marginBottom={hasContent ? 1 : 0}>
+                <Text color="cyan">☍ {tc.name} <Text dimColor>[{total}]</Text></Text>
+                <Text dimColor>   ♨ {formatArgs(tc.args)}</Text>
                 {tc.result !== undefined && (
                   <Text
                     color={tc.status === "error" ? "red" : undefined}
                     dimColor={tc.status !== "error"}
                   >
                     {"   "}
-                    {tc.status === "error" ? "❌" : "📤"}{" "}
+                    {tc.status === "error" ? "⊘" : "📤"}{" "}
                     {truncateResult(tc.result)}
                   </Text>
                 )}
               </Box>
-            ))}
+            );
+          })()}
 
           {/* 文本回复 */}
           {hasContent &&
