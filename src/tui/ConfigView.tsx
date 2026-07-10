@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { readConfig, writeConfig } from "../config/store.js";
 import type { AppConfig } from "../config/schema.js";
+import { VERSION } from "../version.js";
 
 /** 配置页焦点区域 */
 type FocusArea =
@@ -124,7 +125,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          · commit-log-daily · 配置
+          · commit-log-daily v{VERSION} · 配置
         </Text>
       </Box>
       <Text dimColor >↑↓ 选择 · E 编辑 · Space 切换开关 · Enter 确认并保存 · Esc 返回</Text>

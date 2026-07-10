@@ -4,6 +4,7 @@ import { getProjectStats } from '../shared/project-stats.js';
 import type { ProjectStats } from '../shared/project-stats.js';
 import type { ProjectConfig } from '../config/schema.js';
 import { LoadingView } from './components/Loading.js';
+import { VERSION } from '../version.js';
 
 /** 热力图密度字符，从浅到深（仅着色层级，· 作为空单元格背景单独处理） */
 const DENSITY_CHARS = ['░', '▒', '▓', '█'] as const;
@@ -84,7 +85,7 @@ export function ProjectDetailView({
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          {'·'} commit-log-daily {'·'} 项目详情 — {projectName}
+          {'·'} commit-log-daily v{VERSION} {'·'} 项目详情 — {projectName}
         </Text>
       </Box>
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
+import { VERSION } from '../../version.js';
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -111,7 +112,7 @@ export function SettingsPage<T>({
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          · commit-log-daily · {title}
+          · commit-log-daily v{VERSION} · {title}
         </Text>
       </Box>
 
@@ -292,7 +293,7 @@ function ListModeView<T>({
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          · commit-log-daily · {title}
+          · commit-log-daily v{VERSION} · {title}
         </Text>
       </Box>
 
