@@ -94,7 +94,7 @@ function App() {
   }
 
   if (view === 'projects') {
-    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} onGenerateReport={handleGenerateReport} />;
+    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} />;
   }
 
   if (view === 'templates') {
@@ -107,6 +107,7 @@ function App() {
         projectName={detailProjectName}
         projectPath={detailProjectPath}
         onBack={() => setView('projects')}
+        onGenerateReport={handleGenerateReport}
       />
     );
   }

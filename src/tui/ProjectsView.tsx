@@ -15,15 +15,13 @@ interface ProjectsViewProps {
   onBack: () => void;
   /** 选中项目查看详情的回调 */
   onSelect: (name: string, path: string) => void;
-  /** 为选中的项目生成周报（回到聊天页并发送消息） */
-  onGenerateReport: (project: ProjectConfig) => void;
 }
 
 /**
  * 项目管理独立页面
  * 使用 SettingsPage 列表模式提供搜索 + 分页 + 键盘导航
  */
-export function ProjectsView({ onBack, onSelect, onGenerateReport }: ProjectsViewProps) {
+export function ProjectsView({ onBack, onSelect }: ProjectsViewProps) {
   const [projects, setProjects] = useState<ProjectConfig[]>(() => readConfig().projects);
   const [mode, setMode] = useState<Mode>('list');
   const [newName, setNewName] = useState('');
@@ -207,14 +205,6 @@ export function ProjectsView({ onBack, onSelect, onGenerateReport }: ProjectsVie
               } else {
                 setDeleteConfirm(true);
               }
-            },
-          },
-          {
-            key: 'g',
-            label: '生成周报',
-            handler: (ctx) => {
-              if (!ctx.focusedItem) return;
-              onGenerateReport(ctx.focusedItem);
             },
           },
           {
