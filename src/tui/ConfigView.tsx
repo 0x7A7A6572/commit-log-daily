@@ -62,7 +62,9 @@ export function ConfigView({ onClose }: ConfigViewProps) {
         if (!latest) throw new Error("No latest tag");
         if (cancelled) return;
         setLatestVersion(latest);
-        setUpdateStatus(VERSION === latest ? "up-to-date" : "update-available");
+        setUpdateStatus(
+          compareVersions(latest, VERSION) > 0 ? "update-available" : "up-to-date",
+        );
       } catch {
         if (!cancelled) setUpdateStatus("error");
       }
@@ -159,6 +161,28 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       </Box>
       <Text dimColor >↑↓ 选择 · E 编辑 · Space 切换开关 · Enter 确认并保存 · Esc 返回</Text>
 
+
+           {/* 关于 */}
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderColor="grey"
+        marginTop={1}
+        paddingLeft={1}
+        paddingRight={1}
+      >
+        <Box>
+          <Text bold>commit-log-daily </Text>
+          <Text dimColor>v{VERSION}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>开发者日报/周报智能体 · AI-powered Git 提交聚合工具</Text>
+        </Box>
+        <Box>
+          <UpdateStatusText status={updateStatus} latest={latestVersion} current={VERSION} />
+        </Box>
+      </Box>
+
       {/* 配置表单 */}
       <Box flexDirection="column" padding={1}>
         {/* 模型配置 */}
@@ -247,31 +271,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
         </Box>
       ) : null}
 
-      {/* 关于 */}
-      <Box
-        flexDirection="column"
-        borderStyle="single"
-        borderColor="grey"
-        marginTop={1}
-        paddingLeft={1}
-        paddingRight={1}
-      >
-        <Box>
-          <Text bold>commit-log-daily </Text>
-          <Text dimColor>v{VERSION}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>开发者日报/周报智能体 · AI-powered Git 提交聚合工具</Text>
-        </Box>
-        <Box>
-          <UpdateStatusText status={updateStatus} latest={latestVersion} current={VERSION} />
-        </Box>
-        <Box marginTop={1}>
-          <Text color="grey">
-            npm i -g commit-log-daily · pnpm build && node bin/agent.js
-          </Text>
-        </Box>
-      </Box>
+
     </Box>
   );
 }
@@ -384,6 +384,18 @@ function maskForDisplay(key: string): string {
   if (!key) return "(未配置)";
   if (key.length <= 6) return "****";
   return `${key.slice(0, 3)}${"*".repeat(key.length - 6)}${key.slice(-3)}`;
+}
+
+/** 简单 semver 比较：返回正数表示 a > b，负数 a < b，0 相等 */
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => v.split(".").map(Number);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 /** 更新状态展示 */
