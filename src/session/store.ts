@@ -1,28 +1,19 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import { CONFIG_DIR } from '../config/store.js';
+import { openDb } from './db.js';
+import type { DbWrapper } from './db.js';
 import type { SessionSummary, FullSession, StoredMessage } from './types.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
 import { createEmptyContext } from '../agent/types.js';
 
-/** 数据库文件路径 */
-const DB_PATH = path.join(CONFIG_DIR, 'sessions.db');
-
 /** 数据库单例 */
-let db: Database.Database | null = null;
+let db: DbWrapper | null = null;
 
-/** 初始化数据库连接并建表 */
-export function openDb(): Database.Database {
+/** 获取或初始化数据库连接并建表 */
+function getOrInitDb(): DbWrapper {
   if (db) return db;
 
-  db = new Database(DB_PATH);
+  db = openDb();
 
-  // 启用 WAL 模式，支持并发读
-  db.pragma('journal_mode = WAL');
-
-  // 启用外键约束
-  db.pragma('foreign_keys = ON');
-
+  // 建表（幂等）
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id          TEXT PRIMARY KEY,
@@ -36,7 +27,7 @@ export function openDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS messages (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      role        TEXT NOT NULL,  -- 冗余字段，方便直接 SQL 查询时按 role 筛选，恢复时以 content JSON 内的 role 为准
+      role        TEXT NOT NULL,
       content     TEXT NOT NULL,
       created_at  TEXT NOT NULL,
       seq         INTEGER NOT NULL
@@ -50,7 +41,7 @@ export function openDb(): Database.Database {
 
 /** 创建新会话，返回 sessionId */
 export function createSession(title: string): string {
-  const database = openDb();
+  const database = getOrInitDb();
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -71,7 +62,7 @@ export function saveMessage(
   content: string,
   seq: number,
 ): void {
-  const database = openDb();
+  const database = getOrInitDb();
   const now = new Date().toISOString();
 
   // 事务包裹确保消息 INSERT 和会话 UPDATE 的原子性
@@ -97,7 +88,7 @@ export function saveContext(
   phase: AgentPhase,
   context: SessionContext,
 ): void {
-  const database = openDb();
+  const database = getOrInitDb();
   const now = new Date().toISOString();
 
   database
@@ -109,7 +100,7 @@ export function saveContext(
 
 /** 查询会话列表（按 updated_at 倒序） */
 export function listSessions(limit = 50): SessionSummary[] {
-  const database = openDb();
+  const database = getOrInitDb();
 
   const rows = database
     .prepare(
@@ -147,7 +138,7 @@ export function listSessions(limit = 50): SessionSummary[] {
 
 /** 加载完整会话（含所有消息） */
 export function loadSession(sessionId: string): FullSession | null {
-  const database = openDb();
+  const database = getOrInitDb();
 
   const sessionRow = database
     .prepare(
@@ -206,6 +197,6 @@ export function loadSession(sessionId: string): FullSession | null {
 
 /** 删除会话及其所有消息（级联删除） */
 export function deleteSession(sessionId: string): void {
-  const database = openDb();
+  const database = getOrInitDb();
   database.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId);
 }

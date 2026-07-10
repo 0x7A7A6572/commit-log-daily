@@ -51,7 +51,7 @@ Agent 分两个阶段，由 `useSession.ts` 中的 Phase 状态和 `src/agent/ba
 
 ### 会话持久化
 
-`src/session/store.ts` — SQLite（better-sqlite3），数据库文件 `~/.commit-log-daily/sessions.db`。
+`src/session/store.ts` — SQLite（sql.js WASM），数据库文件 `~/.commit-log-daily/sessions.db`。
 
 - `sessions` 表：id、title、phase、context（SessionContext JSON）、时间戳
 - `messages` 表：session_id（外键级联删除）、role、content（StoredMessage JSON）、seq
@@ -90,7 +90,7 @@ Schema 在 `src/config/schema.ts` 用 Zod 定义：`AppConfig { model, author, p
 - **运行时**：Node.js 18+，TypeScript 5.8+（ES2022 目标，NodeNext 模块）
 - **TUI**：React 19 + Ink 7 + ink-text-input
 - **AI**：LangChain（@langchain/core + @langchain/openai），兼容 OpenAI 的 API
-- **持久化**：better-sqlite3（SQLite）+ JSON 配置文件
+- **持久化**：sql.js（SQLite WASM）+ JSON 配置文件
 - **校验**：Zod v4
 - **包管理**：pnpm 10
 

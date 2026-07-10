@@ -89,4 +89,4 @@ Agent 不会简单罗列提交，而是：
 - 运行时：Node.js 18+
 - TUI：React 19 + Ink 7
 - AI：LangChain（兼容 OpenAI API）
-- 持久化：better-sqlite3
+- 持久化：sql.js（SQLite WASM，零原生依赖）
