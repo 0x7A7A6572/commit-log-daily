@@ -4,6 +4,7 @@ import TextInput from "ink-text-input";
 import { readConfig, writeConfig } from "../config/store.js";
 import type { AppConfig } from "../config/schema.js";
 import { VERSION } from "../version.js";
+import { LoadingView } from "./components/Loading.js";
 
 /** 更新检查状态 */
 type UpdateStatus = "idle" | "checking" | "up-to-date" | "update-available" | "error";
@@ -162,21 +163,16 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       <Text dimColor >↑↓ 选择 · E 编辑 · Space 切换开关 · Enter 确认并保存 · Esc 返回</Text>
 
 
-           {/* 关于 */}
+      {/* 关于 */}
       <Box
         flexDirection="column"
-        borderStyle="single"
-        borderColor="grey"
         marginTop={1}
         paddingLeft={1}
         paddingRight={1}
       >
         <Box>
-          <Text bold>commit-log-daily </Text>
+          <Text dimColor bold>commit-log-daily </Text>
           <Text dimColor>v{VERSION}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>开发者日报/周报智能体 · AI-powered Git 提交聚合工具</Text>
         </Box>
         <Box>
           <UpdateStatusText status={updateStatus} latest={latestVersion} current={VERSION} />
@@ -251,7 +247,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           focused={currentFocus === "safety-safeMode"}
           editing={false}
           editValue=""
-          onChangeEdit={() => {}}
+          onChangeEdit={() => { }}
         />
         <Box marginLeft={1}>
           <Text dimColor>
@@ -410,7 +406,7 @@ function UpdateStatusText({
 }) {
   switch (status) {
     case "checking":
-      return <Text dimColor>⏳ 正在检查更新…</Text>;
+      return <LoadingView loadingText="正在检查更新…" color="grey" />;
     case "up-to-date":
       return <Text color="green">✓ 已是最新版本</Text>;
     case "update-available":
