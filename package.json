@@ -21,6 +21,7 @@
     "src"
   ],
   "scripts": {
+    "prebuild": "node scripts/gen-version.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "pnpm -s build && node bin/agent.js",
