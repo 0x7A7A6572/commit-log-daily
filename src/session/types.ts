@@ -1,4 +1,5 @@
 import type { SessionContext, AgentPhase } from '../agent/types.js';
+import type { SummaryMemory } from '../agent/types.js';
 
 /** 会话列表项（不含消息体） */
 export interface SessionSummary {
@@ -17,6 +18,7 @@ export interface FullSession {
   phase: AgentPhase;
   context: SessionContext;
   messages: StoredMessage[];
+  summary: SummaryMemory | null;  // ★ 持久化的摘要
 }
 
 /** 存储的消息结构（持久化格式） */

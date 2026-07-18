@@ -33,6 +33,39 @@ const safetySchema = z.object({
   safeMode: z.boolean().default(true),
 });
 
+/** 单次任务偏好快照 — 项目组合 + 时间范围 + 额外工作 作为一个整体 */
+const taskPreferenceSchema = z.object({
+  /** 项目名称，排序后存储，用于精确匹配 */
+  projects: z.array(z.string()),
+  /** 时间范围类型 */
+  timeRangeType: z.enum(['daily', 'weekly', 'monthly', 'custom']),
+  /** 实际天数 */
+  timeRangeDays: z.number(),
+  /** 本次是否有额外工作 */
+  hasExtraWork: z.boolean(),
+  /** 该完整模式被使用的次数 */
+  count: z.number(),
+  /** 最近一次使用日期（ISO） */
+  lastUsed: z.string(),
+});
+
+/** 单次任务偏好类型 */
+export type TaskPreference = z.infer<typeof taskPreferenceSchema>;
+
+/** 个性化偏好 schema — 根据会话历史自动统计，用于新会话快速启动 */
+export const userPreferencesSchema = z.object({
+  /** 任务偏好快照列表，按 (projects, timeRangeType, timeRangeDays, hasExtraWork) 四元组精确匹配 */
+  tasks: z.array(taskPreferenceSchema).default([]),
+});
+
+/** 个性化偏好类型 */
+export type UserPreferences = z.infer<typeof userPreferencesSchema>;
+
+/** 个性化偏好默认值 */
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  tasks: [],
+};
+
 /** 应用完整配置 schema */
 export const appConfigSchema = z.object({
   model: modelSchema,

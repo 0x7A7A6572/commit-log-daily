@@ -1,7 +1,7 @@
 import { openDb } from './db.js';
 import type { DbWrapper } from './db.js';
 import type { SessionSummary, FullSession, StoredMessage } from './types.js';
-import type { SessionContext, AgentPhase } from '../agent/types.js';
+import type { SessionContext, AgentPhase, SummaryMemory } from '../agent/types.js';
 import { createEmptyContext } from '../agent/types.js';
 
 /** 数据库单例 */
@@ -20,6 +20,7 @@ function getOrInitDb(): DbWrapper {
       title       TEXT NOT NULL,
       phase       TEXT NOT NULL DEFAULT 'collect',
       context     TEXT NOT NULL,
+      summary     TEXT,
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
@@ -35,6 +36,13 @@ function getOrInitDb(): DbWrapper {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
   `);
+
+  // 迁移：旧数据库没有 summary 列时补充
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`);
+  } catch {
+    // 列已存在，忽略
+  }
 
   return db;
 }
@@ -98,6 +106,17 @@ export function saveContext(
     .run(phase, JSON.stringify(context), now, sessionId);
 }
 
+/** 保存摘要到会话 */
+export function saveSummary(
+  sessionId: string,
+  summary: SummaryMemory,
+): void {
+  const database = getOrInitDb();
+  database
+    .prepare(`UPDATE sessions SET summary = ? WHERE id = ?`)
+    .run(JSON.stringify(summary), sessionId);
+}
+
 /** 查询会话列表（按 updated_at 倒序） */
 export function listSessions(limit = 50): SessionSummary[] {
   const database = getOrInitDb();
@@ -136,13 +155,14 @@ export function listSessions(limit = 50): SessionSummary[] {
   }));
 }
 
-/** 加载完整会话（含所有消息） */
+/** 加载完整会话（含所有消息，摘要覆盖的消息跳过加载） */
 export function loadSession(sessionId: string): FullSession | null {
   const database = getOrInitDb();
 
   const sessionRow = database
     .prepare(
-      `SELECT id, title, phase, context, created_at AS createdAt, updated_at AS updatedAt
+      `SELECT id, title, phase, context, summary,
+              created_at AS createdAt, updated_at AS updatedAt
        FROM sessions WHERE id = ?`,
     )
     .get(sessionId) as
@@ -151,6 +171,7 @@ export function loadSession(sessionId: string): FullSession | null {
         title: string;
         phase: string;
         context: string;
+        summary: string | null;
         createdAt: string;
         updatedAt: string;
       }
@@ -167,13 +188,25 @@ export function loadSession(sessionId: string): FullSession | null {
     context = createEmptyContext();
   }
 
+  // 解析摘要（如果有）
+  let summary: SummaryMemory | null = null;
+  if (sessionRow.summary) {
+    try {
+      summary = JSON.parse(sessionRow.summary) as SummaryMemory;
+    } catch {
+      summary = null;
+    }
+  }
+
+  // 加载消息，跳过摘要已覆盖的部分
+  const skipUpTo = summary?.coveredUpToSeq ?? -1;
   const messageRows = database
     .prepare(
       `SELECT role, content FROM messages
-       WHERE session_id = ?
+       WHERE session_id = ? AND seq > ?
        ORDER BY seq`,
     )
-    .all(sessionId) as Array<{ role: string; content: string }>;
+    .all(sessionId, skipUpTo) as Array<{ role: string; content: string }>;
 
   const messages: StoredMessage[] = [];
   for (const row of messageRows) {
@@ -192,6 +225,7 @@ export function loadSession(sessionId: string): FullSession | null {
     phase: sessionRow.phase as AgentPhase,
     context,
     messages,
+    summary,
   };
 }
 

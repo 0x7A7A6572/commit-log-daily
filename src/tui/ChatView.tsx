@@ -65,7 +65,7 @@ interface ChatViewProps {
   /** 当前消息列表 */
   messages: ChatMessage[];
   /** 当前会话累计 token 消耗 */
-  tokenUsage: SessionContext['tokenUsage'];
+  tokenUsage: SessionContext["tokenUsage"];
   /** 用户提交消息的回调 */
   onSubmit: (text: string) => void;
   /** 是否正在等待 Agent 响应 */
@@ -75,7 +75,7 @@ interface ChatViewProps {
   /** 待用户审批的操作（execTool 中断时弹出确认） */
   pendingApproval: PendingApproval | null;
   /** 用户审批决策回调 */
-  onApproval: (decision: 'approve' | 'reject') => void;
+  onApproval: (decision: "approve" | "reject") => void;
 }
 
 /** 聊天界面视图 */
@@ -198,14 +198,18 @@ export function ChatView({
     <Box flexDirection="column">
       {/* 消息区域 */}
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
-        {(
+        {
           <Box paddingLeft={2} paddingTop={1} flexDirection="column">
             <Text>{LOGO}</Text>
             <Text dimColor>{WELCOME_GUIDE}</Text>
           </Box>
-        )}
+        }
         {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} showToolDetails={showToolDetails} />
+          <MessageBubble
+            key={i}
+            message={msg}
+            showToolDetails={showToolDetails}
+          />
         ))}
         {isWaiting && (
           <Box paddingLeft={2} paddingTop={1}>
@@ -283,12 +287,11 @@ export function ChatView({
 
         {/* 当前模式和 token 消耗 */}
         <Box paddingLeft={2} paddingRight={1} marginTop={0} gap={2}>
-          <Text dimColor>
-            {safeMode ? "SAFE MODE" : "UNRESTRICTED MODE"}
-          </Text>
+          <Text dimColor>{safeMode ? "SAFE MODE" : "UNRESTRICTED MODE"}</Text>
           <Text dimColor>|</Text>
           <Text dimColor>
-            Tokens: in {tokenCountToUnit(tokenUsage?.input_tokens ?? 0)} / out {tokenCountToUnit(tokenUsage?.output_tokens ?? 0)}
+            Tokens: in {tokenCountToUnit(tokenUsage?.input_tokens ?? 0)} / out{" "}
+            {tokenCountToUnit(tokenUsage?.output_tokens ?? 0)}
           </Text>
         </Box>
       </Box>
@@ -305,14 +308,27 @@ const MessageBubble = React.memo(function MessageBubble({
   showToolDetails: boolean;
 }) {
   if (message.role === "system") {
+    const lines = message.content.split("\n");
     return (
       <Box
-        flexDirection="column"
-        paddingLeft={2}
-        paddingRight={2}
-        marginTop={0}
+        flexDirection="row"
+        justifyContent="flex-start"
+        paddingLeft={1}
+        paddingRight={1}
+        marginTop={2}
       >
-        <Text dimColor>{message.content}</Text>
+        <Box flexDirection="column" paddingBottom={1} borderStyle="single" borderColor="green">
+          <Box backgroundColor="greenBright" marginBottom={1}>
+            <Text bold color="white">
+              {" =] "}System:{" "}
+            </Text>
+          </Box>
+          {lines.map((line, i) => (
+            <Box key={i} marginLeft={1}>
+              <Text color="greenBright">{line || " "}</Text>
+            </Box>
+          ))}
+        </Box>
       </Box>
     );
   }
@@ -321,7 +337,9 @@ const MessageBubble = React.memo(function MessageBubble({
     return <UserBubble content={message.content} />;
   }
 
-  return <AssistantBubble message={message} showToolDetails={showToolDetails} />;
+  return (
+    <AssistantBubble message={message} showToolDetails={showToolDetails} />
+  );
 });
 
 /** 用户消息 — 左对齐，白色背景 */
@@ -374,7 +392,9 @@ function AssistantBubble({
       <Box paddingLeft={2}>
         <Text color="cyan">{"│"}</Text>
         <Box paddingLeft={1} paddingRight={1}>
-          <Text bold color="cyan">Bot ⌘</Text>
+          <Text bold color="cyan">
+            Bot ⌘
+          </Text>
         </Box>
       </Box>
 
@@ -386,7 +406,9 @@ function AssistantBubble({
         <Box flexDirection="column" flexGrow={1}>
           {/* 思考过程 + 工具调用（共享折叠逻辑） */}
           {(() => {
-            const tc = hasToolCalls ? toolCalls![toolCalls!.length - 1] : undefined;
+            const tc = hasToolCalls
+              ? toolCalls![toolCalls!.length - 1]
+              : undefined;
             // 展开条件：用户手动展开、工具执行中（无 result）、或错误状态
             const showDetails =
               showToolDetails ||
@@ -394,13 +416,17 @@ function AssistantBubble({
             // 折叠时若思考过程或工具调用已完成，显示折叠提示
             const hasFolded =
               !showDetails &&
-              (hasReasoning || (tc && tc.result !== undefined && tc.status !== "error"));
+              (hasReasoning ||
+                (tc && tc.result !== undefined && tc.status !== "error"));
 
             return (
               <>
                 {/* 思考过程 — 仅在展开时显示 */}
                 {showDetails && hasReasoning && (
-                  <Box flexDirection="column" marginBottom={hasToolCalls || hasContent ? 1 : 0}>
+                  <Box
+                    flexDirection="column"
+                    marginBottom={hasToolCalls || hasContent ? 1 : 0}
+                  >
                     <Text color="yellow" dimColor>
                       ✱ 思考过程：
                     </Text>
@@ -413,18 +439,18 @@ function AssistantBubble({
                   <Box flexDirection="column" marginBottom={hasContent ? 1 : 0}>
                     <Text color="cyan">
                       ☍ {tc.name} <Text dimColor>[{toolCalls!.length}]</Text>
-                      {!showDetails && <Text dimColor>  Ctrl+T 展开详情</Text>}
+                      {!showDetails && <Text dimColor> Ctrl+T 展开详情</Text>}
                     </Text>
                     {showDetails && (
                       <>
-                        <Text dimColor>   ♨ {formatArgs(tc.args)}</Text>
+                        <Text dimColor> ∵ {formatArgs(tc.args)}</Text>
                         {tc.result !== undefined && (
                           <Text
                             color={tc.status === "error" ? "red" : undefined}
                             dimColor={tc.status !== "error"}
                           >
                             {"   "}
-                            {tc.status === "error" ? "⊘" : "╚"}{" "}
+                            {tc.status === "error" ? "⊘" : "∴"}{" "}
                             {truncateResult(tc.result)}
                           </Text>
                         )}
@@ -455,8 +481,8 @@ function AssistantBubble({
           {hasFooter && (
             <Box marginTop={hasContent || hasToolCalls ? 1 : 0}>
               <Text dimColor>
-                ── tokens: ↑ {tokenCountToUnit(tokenUsage!.input_tokens)}{" "}
-                / ↓ {tokenCountToUnit(tokenUsage!.output_tokens)}
+                ── tokens: ↑ {tokenCountToUnit(tokenUsage!.input_tokens)} / ↓{" "}
+                {tokenCountToUnit(tokenUsage!.output_tokens)}
               </Text>
             </Box>
           )}
@@ -469,9 +495,7 @@ function AssistantBubble({
 /** 截断过长的思考过程（默认 300 字） */
 function truncateReasoning(text: string, maxLen = 300): string {
   if (text.length <= maxLen) return text;
-  return (
-    text.slice(0, maxLen) + `...（共 ${text.length} 字，已截断）`
-  );
+  return text.slice(0, maxLen) + `...（共 ${text.length} 字，已截断）`;
 }
 
 /** 格式化工具调用参数为紧凑单行 */
@@ -489,9 +513,7 @@ function formatArgs(args: Record<string, unknown>): string {
 /** 截断过长的工具执行结果（默认 500 字） */
 function truncateResult(result: string, maxLen = 500): string {
   if (result.length <= maxLen) return result;
-  return (
-    result.slice(0, maxLen) + `...（共 ${result.length} 字，已截断）`
-  );
+  return result.slice(0, maxLen) + `...（共 ${result.length} 字，已截断）`;
 }
 
 /** 安全审批确认横幅 — 黄色警告背景，Enter 确认 / Esc 拒绝 */
@@ -500,29 +522,29 @@ function ApprovalBanner({
   onApproval,
 }: {
   approval: PendingApproval;
-  onApproval: (decision: 'approve' | 'reject') => void;
+  onApproval: (decision: "approve" | "reject") => void;
 }): React.ReactElement {
   useInput((_input, key) => {
     if (key.return) {
-      onApproval('approve');
+      onApproval("approve");
       return;
     }
     if (key.escape) {
-      onApproval('reject');
+      onApproval("reject");
       return;
     }
     // Y/y 确认，N/n 拒绝
-    if (_input.toLowerCase() === 'y') {
-      onApproval('approve');
+    if (_input.toLowerCase() === "y") {
+      onApproval("approve");
       return;
     }
-    if (_input.toLowerCase() === 'n') {
-      onApproval('reject');
+    if (_input.toLowerCase() === "n") {
+      onApproval("reject");
       return;
     }
   });
 
-  const argsStr = approval.args.length > 0 ? ` ${approval.args.join(' ')}` : '';
+  const argsStr = approval.args.length > 0 ? ` ${approval.args.join(" ")}` : "";
 
   return (
     <Box
@@ -547,7 +569,8 @@ function ApprovalBanner({
       </Box>
       <Box>
         <Text bold>
-          将执行: {approval.command}{argsStr}
+          将执行: {approval.command}
+          {argsStr}
         </Text>
       </Box>
       <Box marginTop={1} gap={2}>

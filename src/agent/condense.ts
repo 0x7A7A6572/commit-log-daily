@@ -2,6 +2,15 @@ import { SystemMessage, AIMessage, HumanMessage } from '@langchain/core/messages
 import type { BaseMessage } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
 import { readConfig } from '../config/store.js';
+import type { SummaryMemory } from './types.js';
+
+/**
+ * 压缩结果：压缩后的消息列表 + 摘要元数据（用于持久化）
+ */
+export interface CondenseResult {
+  messages: BaseMessage[];
+  summary: SummaryMemory | null;
+}
 
 /**
  * 计算一条消息的 token 数
@@ -39,34 +48,38 @@ function createSummaryModel(): ChatOpenAI {
  * @param messages 对话消息（不含 SystemMessage）
  * @param maxTokens 上下文窗口上限
  * @param model 可选 — 用于 token 计数和摘要生成的模型实例，不传则自动创建
- * @returns 压缩后的消息列表，或原数组（未触发时）
+ * @param sessionId 可选 — 用于填充返回的 SummaryMemory.sessionId
+ * @returns 压缩后的消息列表和摘要元数据
  */
 export async function condenseMessages(
   messages: BaseMessage[],
   maxTokens?: number,
   model?: ChatOpenAI,
-): Promise<BaseMessage[]> {
+  sessionId?: string,
+): Promise<CondenseResult> {
   // 消息太少，不值得压缩
-  if (messages.length <= 3) return messages;
+  if (messages.length <= 3) return { messages, summary: null };
 
   const modelInstance = model ?? createSummaryModel();
   const config = readConfig();
   const tokenLimit = maxTokens ?? config.model.maxContextTokens;
   const budget = Math.floor(tokenLimit * 0.7);
 
-  // 算总 token
+  // 并行计算所有消息的 token 数（#5 优化）
+  const tokenCounts = await Promise.all(
+    messages.map((msg) => countMsgTokens(msg, modelInstance)),
+  );
   let totalTokens = 0;
-  for (const msg of messages) {
-    totalTokens += await countMsgTokens(msg, modelInstance);
+  for (const count of tokenCounts) {
+    totalTokens += count;
   }
-  if (totalTokens <= budget) return messages;
+  if (totalTokens <= budget) return { messages, summary: null };
 
   // 从最早的消息开始累积，找到需要压缩的范围
   let condensedTokens = 0;
   let condenseEnd = 0;
   for (let i = 0; i < messages.length - 1; i++) {
-    const tokens = await countMsgTokens(messages[i]!, modelInstance);
-    condensedTokens += tokens;
+    condensedTokens += tokenCounts[i]!;
     condenseEnd = i + 1;
 
     // 期望摘要 ~200 tokens，压缩后总 token ≤ budget 就收手
@@ -79,7 +92,7 @@ export async function condenseMessages(
   const condensedCount = toCondense.length;
 
   // 覆盖太短不值得压缩
-  if (condensedCount < 3 && condensedTokens <= 512) return messages;
+  if (condensedCount < 3 && condensedTokens <= 512) return { messages, summary: null };
 
   // 构建对话文本供 LLM 摘要（截断到 200 字避免输入过长）
   const dialogText = toCondense
@@ -114,12 +127,25 @@ export async function condenseMessages(
   const summaryTokens = await modelInstance.getNumTokens(summaryContent);
 
   // 摘要反而更占 token → 跳过
-  if (summaryTokens >= condensedTokens) return messages;
+  if (summaryTokens >= condensedTokens) return { messages, summary: null };
 
   // 替换压缩范围为一条摘要消息
   const summaryMsg = new AIMessage({
     content: `【早期对话摘要】\n${summaryContent}\n（覆盖 ${condensedCount} 条消息，节省约 ${condensedTokens - summaryTokens} tokens）`,
   });
 
-  return [summaryMsg, ...messages.slice(condenseEnd)];
+  const summaryMeta: SummaryMemory = {
+    id: crypto.randomUUID(),
+    sessionId: sessionId ?? '',
+    content: summaryContent,
+    tokenCount: summaryTokens,
+    messageCount: condensedCount,
+    coveredUpToSeq: condensedCount - 1,
+    createdAt: Date.now(),
+  };
+
+  return {
+    messages: [summaryMsg, ...messages.slice(condenseEnd)],
+    summary: summaryMeta,
+  };
 }

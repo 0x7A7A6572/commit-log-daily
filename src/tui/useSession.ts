@@ -3,12 +3,12 @@ import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from '@langchain/
 import type { BaseMessage } from '@langchain/core/messages';
 import { createEmptyContext } from '../agent/session.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
-import { hasTaskCompleteMarker, stripTaskCompleteMarker } from '../agent/base.js';
+import { hasTaskCompleteMarker, stripTaskCompleteMarker, buildUserTip } from '../agent/base.js';
 import { agentGraph } from '../agent/graph.js';
 import { condenseMessages } from '../agent/condense.js';
 import type { ToolCallDisplay, ChatMessage, PendingApproval } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
-import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
+import { createSession, saveMessage, saveSummary, saveContext, loadSession } from '../session/store.js';
 import { readConfig } from '../config/store.js';
 import { Command, isInterrupted, INTERRUPT } from '@langchain/langgraph';
 
@@ -229,7 +229,11 @@ function deserializeMessage(stored: StoredMessage): BaseMessage {
  * 维护消息历史、阶段切换、与 Agent 交互
  */
 export function useSession(): SessionState {
-  const [langMessages, setLangMessages] = useState<BaseMessage[]>([]);
+  const [langMessages, setLangMessages] = useState<BaseMessage[]>(() => {
+    const tip = buildUserTip();
+    if (tip) return [new SystemMessage(tip)];
+    return [];
+  });
   const [phase, setPhase] = useState<AgentPhase>('collect');
   const [isWaiting, setIsWaiting] = useState<boolean>(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -311,7 +315,17 @@ export function useSession(): SessionState {
         // 预处理：压缩早期对话历史（仅当窗口接近上限时触发）
         // 在进入 graph 前做一次摘要，避免工具循环中重复计算
         // 不传 model → condenseMessages 内部自动创建裸 ChatOpenAI 实例
-        const condensedMessages = await condenseMessages(conversationMessages);
+        const { messages: condensedMessages, summary } = await condenseMessages(
+          conversationMessages,
+          undefined,
+          undefined,
+          currentSessionIdRef.current ?? undefined,
+        );
+
+        // 如果生成了摘要，立即持久化
+        if (summary && currentSessionIdRef.current) {
+          saveSummary(currentSessionIdRef.current, summary);
+        }
 
         const stream = await agentGraph.stream(
           {
@@ -523,6 +537,15 @@ export function useSession(): SessionState {
 
       // 还原消息
       const restored: BaseMessage[] = full.messages.map(deserializeMessage);
+
+      // 如果有持久化的摘要且 messages 为空（被摘要全覆盖），插入摘要消息
+      if (full.summary && restored.length === 0) {
+        restored.push(
+          new AIMessage({
+            content: `【早期对话摘要】\n${full.summary.content}\n（覆盖 ${full.summary.messageCount} 条消息，节省约 ${full.summary.tokenCount} tokens）`,
+          }),
+        );
+      }
 
       setLangMessages(restored);
       setPhase(full.phase);
