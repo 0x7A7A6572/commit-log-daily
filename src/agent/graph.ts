@@ -166,7 +166,7 @@ export const agentGraph = new StateGraph(AgentStateAnnotation)
   .addEdge('generateTools', 'generateLLM')
 
   .compile({
-     checkpointer: new MemorySaver() 
+     checkpointer: new MemorySaver()
   });
 
 export { AgentStateAnnotation };

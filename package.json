@@ -1,6 +1,6 @@
 {
   "name": "commit-log-daily",
-  "version": "2.1.0",
+  "version": "2.0.2",
   "description": "",
   "type": "module",
   "bin": {
@@ -26,6 +26,7 @@
     "prepublishOnly": "pnpm build",
     "start": "pnpm -s build && node bin/agent.js",
     "agent": "pnpm -s build && node bin/agent.js",
+    "start:trace": "pnpm -s build && node --env-file .env bin/agent.js",
     "npm:publish": "npm publish --registry=https://registry.npmjs.org"
   },
   "keywords": [
@@ -56,6 +57,7 @@
     "@types/node": "^22.19.17",
     "@types/react": "^19.2.17",
     "@types/sql.js": "^1.4.11",
+    "cross-env": "^10.1.0",
     "typescript": "^5.8.3"
   },
   "packageManager": "pnpm@10.30.3"

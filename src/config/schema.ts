@@ -67,7 +67,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4.1-mini',
     apiKey: '',
-    maxContextTokens: 32000,
+    maxContextTokens: 200000,
   },
   author: {
     name: '',

@@ -18,20 +18,14 @@ import {
   deleteTemplateTool,
   setDefaultTemplateTool,
 } from './tools/template-tool.js';
-import { COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
+import { BASE_SYSTEM_PROMPT, COLLECT_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT } from './prompts/system.js';
 import { resolveTemplateForPrompt } from '../template/resolver.js';
 import { generateReportTool } from './tools/generate.js';
 
-/** collect 阶段可用工具 */
-export const COLLECT_TOOLS = [
-  scanGitTool,
-  scanUncommittedTool,
-  listProjectsTool,
-  addProjectTool,
-  removeProjectTool,
+// 常驻工具
+export const BASE_TOOLS = [
   getConfigTool,
   setConfigTool,
-  findGitReposTool,
   execTool,
   listTemplatesTool,
   readTemplateTool,
@@ -39,10 +33,22 @@ export const COLLECT_TOOLS = [
   updateTemplateTool,
   deleteTemplateTool,
   setDefaultTemplateTool,
+]
+
+/** collect 阶段可用工具 */
+export const COLLECT_TOOLS = [
+  ...BASE_TOOLS,
+  scanGitTool,
+  scanUncommittedTool,
+  listProjectsTool,
+  addProjectTool,
+  removeProjectTool,
+  findGitReposTool
 ];
 
-/** generate 阶段可用工具 */
+/** generate 阶段可用工具（BASE_TOOLS 已包含 execTool，无需重复） */
 export const GENERATE_TOOLS = [
+  ...BASE_TOOLS,
   writeFileTool,
   generateReportTool,
 ];
@@ -81,7 +87,9 @@ export function createModelForPhase(phase: AgentPhase): PhaseModel {
 
   const tools = phase === 'collect' ? COLLECT_TOOLS : GENERATE_TOOLS;
   const runnable = model.bindTools(tools);
-  const systemPrompt = phase === 'collect' ? COLLECT_SYSTEM_PROMPT : buildGeneratePrompt();
+  const systemPrompt = phase === 'collect'
+    ? BASE_SYSTEM_PROMPT + '\n\n' + COLLECT_SYSTEM_PROMPT
+    : BASE_SYSTEM_PROMPT + '\n\n' + buildGeneratePrompt();
 
   return {
     invoke: (messages: BaseMessage[]) => runnable.invoke(messages),

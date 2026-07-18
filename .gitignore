@@ -1,7 +1,8 @@
 .history
+.env
 node_modules/**
 .DS_Store
 dist/**
 dist.claude/
 docs/superpowers/**
-
+.backup/

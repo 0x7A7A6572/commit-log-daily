@@ -24,6 +24,14 @@ export interface SessionContext {
   tokenUsage: { input_tokens: number, output_tokens: number };
 }
 
+/** 摘要记忆 */ 
+interface SummaryMemory {
+  content: string;            // LLM 生成的摘要文本
+  tokenCount: number;         // content 占多少 token（给 trimMessages 用）
+  messageCount: number;       // 覆盖了多少条原始消息（便于判断是否值得保留）
+  createdAt: number;          // 生成时间（ms）
+}
+
 /** Agent 工作阶段 */
 export type AgentPhase = 'collect' | 'generate';
 

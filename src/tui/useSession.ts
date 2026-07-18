@@ -5,6 +5,7 @@ import { createEmptyContext } from '../agent/session.js';
 import type { SessionContext, AgentPhase } from '../agent/types.js';
 import { hasTaskCompleteMarker, stripTaskCompleteMarker } from '../agent/base.js';
 import { agentGraph } from '../agent/graph.js';
+import { condenseMessages } from '../agent/condense.js';
 import type { ToolCallDisplay, ChatMessage, PendingApproval } from './ChatView.js';
 import type { StoredMessage } from '../session/types.js';
 import { createSession, saveMessage, saveContext, loadSession } from '../session/store.js';
@@ -306,9 +307,15 @@ export function useSession(): SessionState {
           configurable: { thread_id: threadId },
         };
         streamConfigRef.current = streamConfig;
+
+        // 预处理：压缩早期对话历史（仅当窗口接近上限时触发）
+        // 在进入 graph 前做一次摘要，避免工具循环中重复计算
+        // 不传 model → condenseMessages 内部自动创建裸 ChatOpenAI 实例
+        const condensedMessages = await condenseMessages(conversationMessages);
+
         const stream = await agentGraph.stream(
           {
-            messages: [...conversationMessages, userMsg],
+            messages: [...condensedMessages, userMsg],
             phase: currentPhase,
           },
           streamConfig,
@@ -373,7 +380,9 @@ export function useSession(): SessionState {
         }
 
         // 持久化本轮新增消息（流结束后一次性写入）
-        const newMessages = resultMessages.slice(conversationMessages.length);
+        // 偏移量 = condensedMessages（传给 graph 的消息条数） + 用户新消息（1）
+        const graphInputCount = condensedMessages.length + 1;
+        const newMessages = resultMessages.slice(graphInputCount);
         let msgSeq = userSeq + 1;
         for (const msg of newMessages) {
           const msgType = msg.getType();
