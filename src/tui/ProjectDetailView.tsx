@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getProjectStats } from '../shared/project-stats.js';
 import type { ProjectStats } from '../shared/project-stats.js';
+import type { ProjectConfig } from '../config/schema.js';
+import { LoadingView } from './components/Loading.js';
+import { VERSION } from '../version.js';
 
 /** 热力图密度字符，从浅到深（仅着色层级，· 作为空单元格背景单独处理） */
 const DENSITY_CHARS = ['░', '▒', '▓', '█'] as const;
@@ -26,6 +29,7 @@ interface ProjectDetailViewProps {
   projectName: string;
   projectPath: string;
   onBack: () => void;
+  onGenerateReport: (project: ProjectConfig) => void;
 }
 
 /**
@@ -36,6 +40,7 @@ export function ProjectDetailView({
   projectName,
   projectPath,
   onBack,
+  onGenerateReport,
 }: ProjectDetailViewProps) {
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,9 +71,12 @@ export function ProjectDetailView({
     };
   }, [projectPath]);
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.escape) {
       onBack();
+    }
+    if (input === 'g' && !key.ctrl && !key.meta) {
+      onGenerateReport({ name: projectName, path: projectPath });
     }
   });
 
@@ -77,7 +85,7 @@ export function ProjectDetailView({
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          {'·'} commit-log-daily {'·'} 项目详情 — {projectName}
+          {'·'} commit-log-daily v{VERSION} {'·'} 项目详情 — {projectName}
         </Text>
       </Box>
 
@@ -89,7 +97,7 @@ export function ProjectDetailView({
       )}
       {loading && (
         <Box marginTop={1}>
-          <Text dimColor>计算中...</Text>
+          <LoadingView loadingText="计算中..." color="yellow" loading />
         </Box>
       )}
 
@@ -113,7 +121,7 @@ export function ProjectDetailView({
 
       {/* 底部操作提示 */}
       <Box marginTop={1}>
-        <Text dimColor>Esc 返回项目列表</Text>
+        <Text dimColor>Esc 返回  |  G 生成周报</Text>
       </Box>
     </Box>
   );

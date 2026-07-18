@@ -1,34 +1,26 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import { CONFIG_DIR } from '../config/store.js';
+import { openDb } from './db.js';
+import type { DbWrapper } from './db.js';
 import type { SessionSummary, FullSession, StoredMessage } from './types.js';
-import type { SessionContext, AgentPhase } from '../agent/types.js';
+import type { SessionContext, AgentPhase, SummaryMemory } from '../agent/types.js';
 import { createEmptyContext } from '../agent/types.js';
 
-/** 数据库文件路径 */
-const DB_PATH = path.join(CONFIG_DIR, 'sessions.db');
-
 /** 数据库单例 */
-let db: Database.Database | null = null;
+let db: DbWrapper | null = null;
 
-/** 初始化数据库连接并建表 */
-export function openDb(): Database.Database {
+/** 获取或初始化数据库连接并建表 */
+function getOrInitDb(): DbWrapper {
   if (db) return db;
 
-  db = new Database(DB_PATH);
+  db = openDb();
 
-  // 启用 WAL 模式，支持并发读
-  db.pragma('journal_mode = WAL');
-
-  // 启用外键约束
-  db.pragma('foreign_keys = ON');
-
+  // 建表（幂等）
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id          TEXT PRIMARY KEY,
       title       TEXT NOT NULL,
       phase       TEXT NOT NULL DEFAULT 'collect',
       context     TEXT NOT NULL,
+      summary     TEXT,
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
@@ -36,7 +28,7 @@ export function openDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS messages (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      role        TEXT NOT NULL,  -- 冗余字段，方便直接 SQL 查询时按 role 筛选，恢复时以 content JSON 内的 role 为准
+      role        TEXT NOT NULL,
       content     TEXT NOT NULL,
       created_at  TEXT NOT NULL,
       seq         INTEGER NOT NULL
@@ -45,12 +37,19 @@ export function openDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
   `);
 
+  // 迁移：旧数据库没有 summary 列时补充
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN summary TEXT`);
+  } catch {
+    // 列已存在，忽略
+  }
+
   return db;
 }
 
 /** 创建新会话，返回 sessionId */
 export function createSession(title: string): string {
-  const database = openDb();
+  const database = getOrInitDb();
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -71,7 +70,7 @@ export function saveMessage(
   content: string,
   seq: number,
 ): void {
-  const database = openDb();
+  const database = getOrInitDb();
   const now = new Date().toISOString();
 
   // 事务包裹确保消息 INSERT 和会话 UPDATE 的原子性
@@ -97,7 +96,7 @@ export function saveContext(
   phase: AgentPhase,
   context: SessionContext,
 ): void {
-  const database = openDb();
+  const database = getOrInitDb();
   const now = new Date().toISOString();
 
   database
@@ -107,9 +106,20 @@ export function saveContext(
     .run(phase, JSON.stringify(context), now, sessionId);
 }
 
+/** 保存摘要到会话 */
+export function saveSummary(
+  sessionId: string,
+  summary: SummaryMemory,
+): void {
+  const database = getOrInitDb();
+  database
+    .prepare(`UPDATE sessions SET summary = ? WHERE id = ?`)
+    .run(JSON.stringify(summary), sessionId);
+}
+
 /** 查询会话列表（按 updated_at 倒序） */
 export function listSessions(limit = 50): SessionSummary[] {
-  const database = openDb();
+  const database = getOrInitDb();
 
   const rows = database
     .prepare(
@@ -145,13 +155,14 @@ export function listSessions(limit = 50): SessionSummary[] {
   }));
 }
 
-/** 加载完整会话（含所有消息） */
+/** 加载完整会话（含所有消息，摘要覆盖的消息跳过加载） */
 export function loadSession(sessionId: string): FullSession | null {
-  const database = openDb();
+  const database = getOrInitDb();
 
   const sessionRow = database
     .prepare(
-      `SELECT id, title, phase, context, created_at AS createdAt, updated_at AS updatedAt
+      `SELECT id, title, phase, context, summary,
+              created_at AS createdAt, updated_at AS updatedAt
        FROM sessions WHERE id = ?`,
     )
     .get(sessionId) as
@@ -160,6 +171,7 @@ export function loadSession(sessionId: string): FullSession | null {
         title: string;
         phase: string;
         context: string;
+        summary: string | null;
         createdAt: string;
         updatedAt: string;
       }
@@ -176,13 +188,25 @@ export function loadSession(sessionId: string): FullSession | null {
     context = createEmptyContext();
   }
 
+  // 解析摘要（如果有）
+  let summary: SummaryMemory | null = null;
+  if (sessionRow.summary) {
+    try {
+      summary = JSON.parse(sessionRow.summary) as SummaryMemory;
+    } catch {
+      summary = null;
+    }
+  }
+
+  // 加载消息，跳过摘要已覆盖的部分
+  const skipUpTo = summary?.coveredUpToSeq ?? -1;
   const messageRows = database
     .prepare(
       `SELECT role, content FROM messages
-       WHERE session_id = ?
+       WHERE session_id = ? AND seq > ?
        ORDER BY seq`,
     )
-    .all(sessionId) as Array<{ role: string; content: string }>;
+    .all(sessionId, skipUpTo) as Array<{ role: string; content: string }>;
 
   const messages: StoredMessage[] = [];
   for (const row of messageRows) {
@@ -201,11 +225,12 @@ export function loadSession(sessionId: string): FullSession | null {
     phase: sessionRow.phase as AgentPhase,
     context,
     messages,
+    summary,
   };
 }
 
 /** 删除会话及其所有消息（级联删除） */
 export function deleteSession(sessionId: string): void {
-  const database = openDb();
+  const database = getOrInitDb();
   database.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId);
 }

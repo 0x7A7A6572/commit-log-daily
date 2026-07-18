@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { render } from 'ink';
+import path from 'node:path';
 import { ChatView } from './ChatView.js';
 import { ConfigView } from './ConfigView.js';
 import { HistoryView } from './HistoryView.js';
@@ -9,6 +10,11 @@ import { ProjectDetailView } from './ProjectDetailView.js';
 import { useSession } from './useSession.js';
 import type { FullSession } from '../session/types.js';
 import type { ProjectConfig } from '../config/schema.js';
+import { initDb } from '../session/db.js';
+import { CONFIG_DIR } from '../config/store.js';
+
+/** 数据库文件路径 */
+const DB_PATH = path.join(CONFIG_DIR, 'sessions.db');
 
 /** 视图模式 */
 type ViewMode = 'chat' | 'config' | 'history' | 'projects' | 'templates' | 'projectDetail';
@@ -94,7 +100,7 @@ function App() {
   }
 
   if (view === 'projects') {
-    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} onGenerateReport={handleGenerateReport} />;
+    return <ProjectsView onBack={() => setView('chat')} onSelect={handleProjectsSelect} />;
   }
 
   if (view === 'templates') {
@@ -107,6 +113,7 @@ function App() {
         projectName={detailProjectName}
         projectPath={detailProjectPath}
         onBack={() => setView('projects')}
+        onGenerateReport={handleGenerateReport}
       />
     );
   }
@@ -125,6 +132,7 @@ function App() {
 }
 
 /** 启动 TUI Agent 模式 */
-export function startAgentTui(): void {
+export async function startAgentTui(): Promise<void> {
+  await initDb(DB_PATH);
   render(<App />);
 }

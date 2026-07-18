@@ -83,7 +83,9 @@ export async function safeGitExecute(projectPath: string, args: string[]): Promi
     }
   }
 
-  const { stdout, stderr } = await execFileAsync('git', ['-C', projectPath, ...args]);
+  const { stdout, stderr } = await execFileAsync('git', ['-C', projectPath, ...args], {
+    maxBuffer: 10 * 1024 * 1024, // 10MB，防止大仓库 git log 输出超默认 1MB 限制
+  });
 
   // 命令成功执行时，stderr 可能包含 Git 诊断输出（如进度信息）
   // 不应混入 stdout，避免下游解析器（如 parseGitLog）消费到非预期内容

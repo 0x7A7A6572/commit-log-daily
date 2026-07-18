@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { readConfig, writeConfig } from "../config/store.js";
 import type { AppConfig } from "../config/schema.js";
+import { VERSION } from "../version.js";
+import { LoadingView } from "./components/Loading.js";
+
+/** 更新检查状态 */
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "update-available" | "error";
 
 /** 配置页焦点区域 */
 type FocusArea =
@@ -40,6 +45,34 @@ export function ConfigView({ onClose }: ConfigViewProps) {
   const [editing, setEditing] = useState<boolean>(false);
   const [editValue, setEditValue] = useState<string>("");
   const [statusMsg, setStatusMsg] = useState<string>("");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [latestVersion, setLatestVersion] = useState<string>("");
+
+  // 检查更新
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      setUpdateStatus("checking");
+      try {
+        const res = await fetch("https://registry.npmjs.org/commit-log-daily", {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { "dist-tags"?: { latest?: string } };
+        const latest = data["dist-tags"]?.latest;
+        if (!latest) throw new Error("No latest tag");
+        if (cancelled) return;
+        setLatestVersion(latest);
+        setUpdateStatus(
+          compareVersions(latest, VERSION) > 0 ? "update-available" : "up-to-date",
+        );
+      } catch {
+        if (!cancelled) setUpdateStatus("error");
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, []);
 
   const currentFocus = FOCUS_ORDER[focusIndex]!;
 
@@ -124,10 +157,27 @@ export function ConfigView({ onClose }: ConfigViewProps) {
       {/* 标题栏 */}
       <Box flexDirection="column" backgroundColor="white" marginBottom={1}>
         <Text bold color="black">
-          · commit-log-daily · 配置
+          · commit-log-daily v{VERSION} · 配置
         </Text>
       </Box>
       <Text dimColor >↑↓ 选择 · E 编辑 · Space 切换开关 · Enter 确认并保存 · Esc 返回</Text>
+
+
+      {/* 关于 */}
+      <Box
+        flexDirection="column"
+        marginTop={1}
+        paddingLeft={1}
+        paddingRight={1}
+      >
+        <Box>
+          <Text dimColor bold>commit-log-daily </Text>
+          <Text dimColor>v{VERSION}</Text>
+        </Box>
+        <Box>
+          <UpdateStatusText status={updateStatus} latest={latestVersion} current={VERSION} />
+        </Box>
+      </Box>
 
       {/* 配置表单 */}
       <Box flexDirection="column" padding={1}>
@@ -197,7 +247,7 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           focused={currentFocus === "safety-safeMode"}
           editing={false}
           editValue=""
-          onChangeEdit={() => {}}
+          onChangeEdit={() => { }}
         />
         <Box marginLeft={1}>
           <Text dimColor>
@@ -216,6 +266,8 @@ export function ConfigView({ onClose }: ConfigViewProps) {
           </Text>
         </Box>
       ) : null}
+
+
     </Box>
   );
 }
@@ -328,4 +380,47 @@ function maskForDisplay(key: string): string {
   if (!key) return "(未配置)";
   if (key.length <= 6) return "****";
   return `${key.slice(0, 3)}${"*".repeat(key.length - 6)}${key.slice(-3)}`;
+}
+
+/** 简单 semver 比较：返回正数表示 a > b，负数 a < b，0 相等 */
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => v.split(".").map(Number);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/** 更新状态展示 */
+function UpdateStatusText({
+  status,
+  latest,
+  current,
+}: {
+  status: UpdateStatus;
+  latest: string;
+  current: string;
+}) {
+  switch (status) {
+    case "checking":
+      return <LoadingView loadingText="正在检查更新…" color="grey" />;
+    case "up-to-date":
+      return <Text color="green">✓ 已是最新版本</Text>;
+    case "update-available":
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">
+            ⚡ 有新版本可用：v{latest}（当前：v{current}）
+          </Text>
+          <Text dimColor>{"  npm i -g commit-log-daily@latest  →  升级"}</Text>
+        </Box>
+      );
+    case "error":
+      return <Text dimColor>⚠ 检查更新失败（无法访问 npm registry）</Text>;
+    default:
+      return null;
+  }
 }
