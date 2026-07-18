@@ -2,6 +2,7 @@ import { SystemMessage, AIMessage, HumanMessage } from '@langchain/core/messages
 import type { BaseMessage } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
 import { readConfig } from '../config/store.js';
+import { generateUUID, normalizeBaseUrl } from '../shared/utils.js';
 import type { SummaryMemory } from './types.js';
 
 /**
@@ -25,10 +26,7 @@ async function countMsgTokens(msg: BaseMessage, model: ChatOpenAI): Promise<numb
  */
 function createSummaryModel(): ChatOpenAI {
   const config = readConfig();
-  let baseUrl = config.model.baseUrl.trim();
-  if (baseUrl && !baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
-    baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
-  }
+  let baseUrl = normalizeBaseUrl(config.model.baseUrl);
   return new ChatOpenAI({
     model: config.model.model,
     temperature: 0,
@@ -118,13 +116,21 @@ export async function condenseMessages(
     new HumanMessage(`请总结以下对话：\n\n${dialogText}`),
   ];
 
-  const summaryResponse = await modelInstance.invoke(summaryPrompt);
-  const summaryContent =
-    typeof summaryResponse.content === 'string'
-      ? summaryResponse.content
-      : JSON.stringify(summaryResponse.content);
+  // 调 LLM 生成摘要（失败时降级为不压缩，避免阻塞主流程）
+  let summaryContent: string;
+  let summaryTokens: number;
+  try {
+    const summaryResponse = await modelInstance.invoke(summaryPrompt);
+    summaryContent =
+      typeof summaryResponse.content === 'string'
+        ? summaryResponse.content
+        : JSON.stringify(summaryResponse.content);
 
-  const summaryTokens = await modelInstance.getNumTokens(summaryContent);
+    summaryTokens = await modelInstance.getNumTokens(summaryContent);
+  } catch {
+    // LLM 调用失败（网络错误/API 错误）→ 跳过摘要，直接发送原始消息
+    return { messages, summary: null };
+  }
 
   // 摘要反而更占 token → 跳过
   if (summaryTokens >= condensedTokens) return { messages, summary: null };
@@ -135,7 +141,7 @@ export async function condenseMessages(
   });
 
   const summaryMeta: SummaryMemory = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     sessionId: sessionId ?? '',
     content: summaryContent,
     tokenCount: summaryTokens,

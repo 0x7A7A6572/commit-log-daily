@@ -1,9 +1,10 @@
-import { Annotation, messagesStateReducer, StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
+import { Annotation, messagesStateReducer, StateGraph, START, END } from '@langchain/langgraph';
 import { ToolNode, toolsCondition } from '@langchain/langgraph/prebuilt';
 import { SystemMessage, AIMessage, trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import { createModelForPhase, COLLECT_TOOLS, GENERATE_TOOLS } from './base.js';
 import type { PhaseModel } from './base.js';
+import { createSqliteSaver } from './checkpoint-sqlite.js';
 
 /**
  * Agent 状态定义
@@ -166,7 +167,7 @@ export const agentGraph = new StateGraph(AgentStateAnnotation)
   .addEdge('generateTools', 'generateLLM')
 
   .compile({
-     checkpointer: new MemorySaver()
+     checkpointer: createSqliteSaver()
   });
 
 export { AgentStateAnnotation };

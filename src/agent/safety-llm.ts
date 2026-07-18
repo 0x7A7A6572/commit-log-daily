@@ -4,6 +4,25 @@ import type { ContentBlock, } from "@langchain/core/messages";
 import { SafetyLevel } from "./types.js";
 import type { SafetyLevel as SafetyLevelType } from "./types.js";
 import { readConfig } from "../config/store.js";
+import { normalizeBaseUrl } from "../shared/utils.js";
+
+/**
+ * 创建安全评估专用的 ChatOpenAI 实例
+ * 每次调用重新读取配置，确保对话中通过 /config 修改 API Key 即时生效
+ */
+function getSafetyLLM(): ChatOpenAI {
+  const config = readConfig();
+  const baseUrl = normalizeBaseUrl(config.model.baseUrl);
+
+  return new ChatOpenAI({
+    model: config.model.model,
+    temperature: 0,
+    configuration: {
+      baseURL: baseUrl,
+      apiKey: config.model.apiKey,
+    },
+  });
+}
 
 function parseJSON(rawText: string | (ContentBlock)[]): any {
   // 1. 处理数组类型：提取其中的纯文本部分
@@ -35,30 +54,12 @@ function parseJSON(rawText: string | (ContentBlock)[]): any {
   }
 }
 
-const config = readConfig();
-
-// 规范化 baseUrl：确保以 /v1 结尾（兼容用户漏写 /v1 的情况）
-let baseUrl = config.model.baseUrl.trim();
-if (baseUrl && !baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
-  baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
-}
-
-
-// 独立的 LLM
-const safetyLLM = new ChatOpenAI({
-  model: config.model.model,
-  temperature: 0,
-  configuration: {
-    baseURL: baseUrl,
-    apiKey: config.model.apiKey,
-  },
-});
-
-// 2. 你的安全评估函数
+/** 安全评估：先本地正则后 LLM 二次确认 */
 export async function evaluateSafety(command: string, args: string[]): Promise<SafetyLevel> {
   const fullCommand = `${command} ${args.join(' ')}`;
 
   // 调用独立的 LLM 进行评估
+  const safetyLLM = getSafetyLLM();
   const response = await safetyLLM.invoke([
     {
       role: "system",

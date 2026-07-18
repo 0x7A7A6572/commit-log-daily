@@ -2,7 +2,7 @@ import initSqlJs, { type Database as SqlJsDb, type BindParams } from 'sql.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
-type SqlParam = string | number | null;
+type SqlParam = string | number | Uint8Array | null;
 
 let database: SqlJsDb | null = null;
 let dbPath: string = '';

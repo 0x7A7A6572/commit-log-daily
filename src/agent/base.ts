@@ -2,6 +2,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
 import { readConfig } from '../config/store.js';
 import { readPreferences } from '../config/prefs.js';
+import { normalizeBaseUrl } from '../shared/utils.js';
 import type { AgentPhase } from './types.js';
 
 import { scanGitTool } from './tools/scanGit.js';
@@ -166,10 +167,7 @@ export function createModelForPhase(phase: AgentPhase): PhaseModel {
   const config = readConfig();
 
   // 规范化 baseUrl：确保以 /v1 结尾（兼容用户漏写 /v1 的情况）
-  let baseUrl = config.model.baseUrl.trim();
-  if (baseUrl && !baseUrl.endsWith('/v1') && !baseUrl.endsWith('/v1/')) {
-    baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
-  }
+  const baseUrl = normalizeBaseUrl(config.model.baseUrl);
 
   const model = new ChatOpenAI({
     model: config.model.model,

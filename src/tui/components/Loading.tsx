@@ -14,6 +14,11 @@ export function LoadingView({
   const isLoading = useRef<boolean>(loading || false);
   const [iconIndex, setIconIndex] = useState<number>(0);
 
+  // 同步 prop 变化到 ref，确保外部控制 loading 状态能正确启停旋转动画
+  useEffect(() => {
+    isLoading.current = loading || false;
+  }, [loading]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       if (isLoading.current) {

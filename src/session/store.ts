@@ -3,12 +3,13 @@ import type { DbWrapper } from './db.js';
 import type { SessionSummary, FullSession, StoredMessage } from './types.js';
 import type { SessionContext, AgentPhase, SummaryMemory } from '../agent/types.js';
 import { createEmptyContext } from '../agent/types.js';
+import { generateUUID } from '../shared/utils.js';
 
 /** 数据库单例 */
 let db: DbWrapper | null = null;
 
-/** 获取或初始化数据库连接并建表 */
-function getOrInitDb(): DbWrapper {
+/** 获取或初始化数据库连接并建表（供 SqliteSaver 等模块复用） */
+export function getOrInitDb(): DbWrapper {
   if (db) return db;
 
   db = openDb();
@@ -44,13 +45,38 @@ function getOrInitDb(): DbWrapper {
     // 列已存在，忽略
   }
 
+  // LangGraph checkpoint 持久化表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS checkpoints (
+      thread_id             TEXT NOT NULL,
+      checkpoint_ns         TEXT NOT NULL DEFAULT '',
+      checkpoint_id         TEXT NOT NULL,
+      parent_checkpoint_id  TEXT,
+      checkpoint            BLOB NOT NULL,
+      metadata              BLOB NOT NULL,
+      created_at            TEXT NOT NULL,
+      PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS checkpoint_writes (
+      thread_id       TEXT NOT NULL,
+      checkpoint_ns   TEXT NOT NULL DEFAULT '',
+      checkpoint_id   TEXT NOT NULL,
+      task_id         TEXT NOT NULL,
+      idx             INTEGER NOT NULL,
+      channel         TEXT NOT NULL,
+      value           BLOB NOT NULL,
+      PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+    );
+  `);
+
   return db;
 }
 
 /** 创建新会话，返回 sessionId */
 export function createSession(title: string): string {
   const database = getOrInitDb();
-  const id = crypto.randomUUID();
+  const id = generateUUID();
   const now = new Date().toISOString();
 
   database

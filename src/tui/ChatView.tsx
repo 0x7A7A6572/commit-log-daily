@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import React, { useState, useRef } from "react";
+import { Box, Text, useInput, Static } from "ink";
 import { LoadingView } from "./components/Loading.js";
 import { MultilineTextInput } from "./components/MultilineTextInput.js";
 import { LOGO, WELCOME_GUIDE } from "./welcome.js";
@@ -21,6 +21,8 @@ export interface ToolCallDisplay {
 
 /** 聊天消息类型 */
 export interface ChatMessage {
+  /** LangChain BaseMessage.id，用于 React 稳定 key 避免流式输出时全量重绘 */
+  id?: string;
   role: "user" | "assistant" | "system";
   content: string;
   /** 思考过程（DeepSeek: additional_kwargs.reasoning_content，通用: reasoning content block） */
@@ -100,6 +102,27 @@ export function ChatView({
 
   // 工具调用详情折叠状态（Ctrl+T 切换），默认折叠
   const [showToolDetails, setShowToolDetails] = useState(false);
+
+  // 追踪已固化到 <Static> 的消息数量，避免 Ink 全屏重绘导致终端滚动复位
+  const committedCountRef = useRef(0);
+  // 消息列表完全替换时（如加载历史会话），重置固化计数
+  if (messages.length < committedCountRef.current) {
+    committedCountRef.current = 0;
+  }
+  // 流式响应时保留最后一条消息在动态区域（内容持续变化），
+  // 非流式时保留最后 2 条用于上下文视觉
+  const commitTarget =
+    isWaiting && messages.length > 0
+      ? messages.length - 1
+      : messages.length > 2
+        ? messages.length - 2
+        : 0;
+  if (commitTarget > committedCountRef.current) {
+    committedCountRef.current = commitTarget;
+  }
+
+  const stableMessages = messages.slice(0, committedCountRef.current);
+  const liveMessages = messages.slice(committedCountRef.current);
 
   // 输入框边框颜色：安全模式关闭时用黄色警告
   const inputBorderColor = safeMode
@@ -196,17 +219,28 @@ export function ChatView({
 
   return (
     <Box flexDirection="column">
-      {/* 消息区域 */}
+      {/* 静态区：已固化的历史消息，写入终端 scrollback 后不再被 Ink 重绘 */}
+      <Static items={stableMessages}>
+        {(msg: ChatMessage, index: number) => (
+          <MessageBubble
+            key={msg.id ?? `static-${index}`}
+            message={msg}
+            showToolDetails={showToolDetails}
+          />
+        )}
+      </Static>
+
+      {/* 动态区：最新消息（流式更新中）+ 欢迎语 + 输入框，仅此区域被 Ink 重绘 */}
       <Box flexDirection="column" paddingLeft={0} paddingRight={0}>
-        {
+        {liveMessages.length === 0 && !isWaiting && (
           <Box paddingLeft={2} paddingTop={1} flexDirection="column">
             <Text>{LOGO}</Text>
             <Text dimColor>{WELCOME_GUIDE}</Text>
           </Box>
-        }
-        {messages.map((msg, i) => (
+        )}
+        {liveMessages.map((msg, i) => (
           <MessageBubble
-            key={i}
+            key={msg.id ?? `live-${i}`}
             message={msg}
             showToolDetails={showToolDetails}
           />
